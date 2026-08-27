@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["telemetry"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+# Deliberately NOT panic = "abort": a panic inside a collector must unwind to
+# the N-API boundary and surface as a JS exception, never abort Electron.
+panic = "unwind"
+strip = "debuginfo"

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content-Security-Policy for the renderer. No remote code, no eval, no
+      remote connections: everything this window needs comes from the preload
+      bridge. Vite's dev server needs its own websocket, which it injects, so
+      this policy is applied to the production document only via the meta tag
+      below being tightened at build time is unnecessary - Vite dev uses
+      inline styles, hence 'unsafe-inline' for style-src only.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*"
+    />
+    <title>Task Manager</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+{
+  "name": "task-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "High-accuracy Windows system resource and process monitor",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @task-manager/desktop dev",
+    "build": "pnpm native:build && pnpm -r --filter=!@task-manager/desktop build && pnpm --filter @task-manager/desktop build",
+    "package": "pnpm build && pnpm --filter @task-manager/desktop package",
+    "native:build": "pnpm --filter @task-manager/telemetry-native build",
+    "native:build:debug": "pnpm --filter @task-manager/telemetry-native build:debug",
+    "test": "pnpm -r test",
+    "test:native": "pnpm --filter @task-manager/telemetry-native test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "electron-winstaller"
+    ]
+  }
+}

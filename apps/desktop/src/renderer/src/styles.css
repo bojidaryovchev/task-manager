@@ -1,0 +1,79 @@
+@import 'tailwindcss';
+
+/*
+  A dense, dark, Windows-oriented palette. Density and legibility come first:
+  this is a tool for reading many numbers quickly, not a marketing page.
+*/
+@theme {
+  --color-surface-0: #0b0d10;
+  --color-surface-1: #12151a;
+  --color-surface-2: #181c23;
+  --color-surface-3: #20252e;
+  --color-border-subtle: #262c36;
+  --color-border-strong: #333b48;
+
+  --color-text-primary: #e6eaf0;
+  --color-text-secondary: #9aa5b4;
+  --color-text-muted: #6b7684;
+
+  --color-accent: #4a9eff;
+  --color-accent-dim: #2d6fbd;
+  --color-cpu: #4a9eff;
+  --color-memory: #a970ff;
+  --color-disk: #35c46a;
+  --color-network: #f0a336;
+  --color-gpu: #ff6b9d;
+  --color-warn: #f5a623;
+  --color-danger: #ff5c5c;
+
+  --font-mono: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace;
+  --font-sans: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface-0);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  overflow: hidden;
+  /* This is a desktop application window, not a document. */
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Values the user may want to copy out of the debug view. */
+.selectable {
+  user-select: text;
+  cursor: text;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 5px;
+  border: 2px solid var(--color-surface-0);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #465264;
+}
+
+/* Tabular numbers everywhere a value changes, so columns do not jitter. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}

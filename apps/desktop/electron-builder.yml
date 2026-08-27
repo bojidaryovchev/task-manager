@@ -1,0 +1,43 @@
+appId: dev.taskmanager.app
+productName: Task Manager
+copyright: Task Manager
+
+directories:
+  output: ../../release
+  buildResources: build
+
+# Only the built output ships. Source, maps and workspace packages are already
+# bundled into out/ by electron-vite.
+files:
+  - out/**/*
+  - package.json
+  - '!**/*.map'
+  - '!**/*.ts'
+
+asar: true
+
+# The native telemetry module is placed outside the archive on purpose: a .node
+# binary cannot be loaded from inside an asar. Shipping it under resources/native
+# also keeps it independent of however the package manager arranged node_modules.
+extraResources:
+  - from: ../../native/telemetry/index.js
+    to: native/index.js
+  - from: ../../native/telemetry/telemetry.win32-x64-msvc.node
+    to: native/telemetry.win32-x64-msvc.node
+
+win:
+  target:
+    # A single self-contained executable. Nothing to install, no runtime
+    # prerequisites: Electron, the native module and the UI are all inside it.
+    - target: portable
+      arch:
+        - x64
+  # Not requireAdministrator: the application works without elevation and only a
+  # few per-process detail fields are unavailable without it.
+  requestedExecutionLevel: asInvoker
+
+portable:
+  artifactName: TaskManager-${version}-x64.exe
+  # Keep the unpack directory stable so repeated launches reuse it rather than
+  # extracting a fresh copy every time.
+  unpackDirName: TaskManager-${version}
