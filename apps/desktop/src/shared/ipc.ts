@@ -1,4 +1,5 @@
 import type { CollectorConfig, HostInfo, SystemSnapshot } from '@task-manager/telemetry-types';
+import type { WidgetSettings } from './widget.js';
 
 /**
  * The complete IPC surface. Channels are constants so main and preload cannot
@@ -20,6 +21,17 @@ export const IpcChannel = {
   SetProcessSubscription: 'telemetry:setProcessSubscription',
   /** main -> renderer push: SystemSnapshot */
   SnapshotEvent: 'telemetry:snapshot',
+
+  /** invoke: () => WidgetSettings */
+  GetWidgetSettings: 'widget:getSettings',
+  /** invoke: (patch: Partial<WidgetSettings>) => WidgetSettings */
+  SetWidgetSettings: 'widget:setSettings',
+  /** invoke: () => void — open the main window and focus it */
+  ShowMainWindow: 'widget:showMainWindow',
+  /** invoke: (x, y) => void — show the widget context menu at a screen point */
+  ShowWidgetMenu: 'widget:showMenu',
+  /** main -> renderer push: WidgetSettings */
+  WidgetSettingsEvent: 'widget:settings',
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -52,4 +64,15 @@ export interface TaskManagerApi {
   setProcessSubscription(wanted: boolean): Promise<void>;
   /** Subscribe to the canonical snapshot stream. Returns an unsubscribe function. */
   onSnapshot(listener: (snapshot: SystemSnapshot) => void): () => void;
+
+  // --- desktop widget ------------------------------------------------------
+  getWidgetSettings(): Promise<WidgetSettings>;
+  /** Apply a partial change. Returns the settings as they ended up after validation. */
+  setWidgetSettings(patch: Partial<WidgetSettings>): Promise<WidgetSettings>;
+  /** Bring the main window to the front, creating it if it was closed. */
+  showMainWindow(): Promise<void>;
+  /** Open the widget's context menu at a point in screen coordinates. */
+  showWidgetMenu(x: number, y: number): Promise<void>;
+  /** Subscribe to widget settings changes. Returns an unsubscribe function. */
+  onWidgetSettings(listener: (settings: WidgetSettings) => void): () => void;
 }

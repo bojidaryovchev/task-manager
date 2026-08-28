@@ -89,11 +89,11 @@ function CpuCard(): React.JSX.Element {
             {
               buffer: telemetryStore.system.get('cpuTimeUtilization'),
               color: 'var(--color-cpu)',
-              fill: 'rgba(74,158,255,0.14)',
+              fill: true,
             },
             {
               buffer: telemetryStore.system.get('cpuBusiest'),
-              color: 'rgba(255,255,255,0.30)',
+              color: 'var(--color-chart-comparison)',
               dashed: true,
             },
           ]}
@@ -181,7 +181,7 @@ function MemoryCard(): React.JSX.Element {
             {
               buffer: telemetryStore.system.get('memoryUsedBytes'),
               color: 'var(--color-memory)',
-              fill: 'rgba(169,112,255,0.14)',
+              fill: true,
             },
           ]}
         />

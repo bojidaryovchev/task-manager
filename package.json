@@ -17,7 +17,8 @@
     "test:native": "pnpm --filter @task-manager/telemetry-native test",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "check:contrast": "node tools/check-contrast.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

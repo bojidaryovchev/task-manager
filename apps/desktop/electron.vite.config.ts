@@ -36,7 +36,14 @@ export default defineConfig({
       // `data:` is explicitly allowed, so inlining removes the risk and a
       // request. The threshold is just above the app logo.
       assetsInlineLimit: 16 * 1024,
-      rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } },
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/renderer/index.html'),
+          // The widget is a separate entry rather than a route, so a 210px
+          // window does not load the whole main application bundle.
+          widget: resolve(__dirname, 'src/renderer/widget.html'),
+        },
+      },
     },
   },
 });

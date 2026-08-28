@@ -20,6 +20,9 @@ asar: true
 # binary cannot be loaded from inside an asar. Shipping it under resources/native
 # also keeps it independent of however the package manager arranged node_modules.
 extraResources:
+  # The tray needs a bitmap at runtime, and `build/` is not part of the package.
+  - from: build/icon.png
+    to: icon.png
   - from: ../../native/telemetry/index.js
     to: native/index.js
   - from: ../../native/telemetry/telemetry.win32-x64-msvc.node

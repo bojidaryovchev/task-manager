@@ -84,14 +84,59 @@ it with a process-lifetime average would be worse.
 └───────────┬─────────────────────┬───────────────────────────┘
             │ IPC                 │ IPC
    ┌────────▼────────┐   ┌────────▼────────┐
-   │ main window     │   │ desktop widget  │  (planned)
+   │ main window     │   │ desktop widget  │
    │ preload bridge  │   │ preload bridge  │
    └─────────────────┘   └─────────────────┘
 ```
 
-`TelemetryService` is a broadcaster from the outset, even though there is
-currently one window. The tray and the desktop widget attach to the same stream;
-they do not get their own engine and do not compute anything.
+`TelemetryService` is a broadcaster. The main window, the desktop widget and the
+tray all attach to the same stream; none of them gets its own engine and none of
+them computes anything.
+
+## The desktop widget
+
+A second `BrowserWindow` in this same application: frameless, transparent,
+always-on-top, excluded from the taskbar. It loads its own HTML entry rather than
+a route inside the main app, so a 250-pixel window does not pull in the whole
+interface.
+
+**It reads the same snapshots.** The widget's layouts format values the collector
+already produced. There is no widget-side calculation, which is the property that
+makes it impossible for the widget and the main window to disagree.
+
+**Only the layout that needs processes asks for them.** Top consumers subscribes
+to the process list; the other three leave process enumeration switched off
+entirely, which is the difference between a ~35 ms and a ~2 ms sample.
+
+**Placement survives the real world.** Position is persisted as it moves,
+debounced. On restore it is only reused if it still lands on a display that
+exists and leaves enough of the window on-screen to grab; otherwise the widget
+goes back to the primary display's top-right corner. Monitors get unplugged and
+scaling changes move work areas, and a widget you cannot reach is worse than one
+in the wrong place.
+
+**Click-through has a guaranteed way back.** An always-on-top frameless window
+that ignores the mouse cannot be right-clicked, so the tray menu — which is
+built from the same template as the widget's own context menu — can always turn
+it off again.
+
+**The window is sized to its content.** Because it is frameless and transparent,
+a window larger than what is drawn shows as dead transparent space inside the
+widget's own outline. `widgetLayoutSize` derives the size from the layout and the
+number of selected metrics.
+
+## Colour and contrast
+
+The palette lives as design tokens in `styles.css`, and `pnpm check:contrast`
+reads those tokens and checks every foreground/background pair the interface
+actually uses against WCAG 2.1 minimums — 4.5:1 for text, 3:1 for graphical
+objects — including the widget composited over a white desktop, its worst case.
+
+Canvas is the sharp edge here. A 2D context silently ignores a colour string it
+cannot parse and keeps whatever it had, so passing `var(--color-cpu)` to
+`strokeStyle` leaves it at the default black and nothing throws. Every colour
+reaching a canvas goes through `resolveColor` in `Chart`, which resolves tokens
+against computed style first.
 
 ## Demand-driven collection
 

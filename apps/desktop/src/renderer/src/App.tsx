@@ -8,6 +8,7 @@ import { MemoryPage } from './pages/Memory.js';
 import { ProcessesPage } from './pages/Processes.js';
 import { ApplicationsPage } from './pages/Applications.js';
 import { DebugPage } from './pages/Debug.js';
+import { WidgetSettingsPage } from './pages/WidgetSettings.js';
 
 export function App(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('overview');
@@ -63,6 +64,7 @@ export function App(): React.JSX.Element {
         {page === 'memory' && <MemoryPage />}
         {page === 'processes' && <ProcessesPage />}
         {page === 'applications' && <ApplicationsPage />}
+        {page === 'widget' && <WidgetSettingsPage />}
         {page === 'debug' && <DebugPage />}
       </main>
     </div>

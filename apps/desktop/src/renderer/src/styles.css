@@ -10,11 +10,11 @@
   --color-surface-2: #181c23;
   --color-surface-3: #20252e;
   --color-border-subtle: #262c36;
-  --color-border-strong: #333b48;
+  --color-border-strong: #5d636e;
 
   --color-text-primary: #e6eaf0;
   --color-text-secondary: #9aa5b4;
-  --color-text-muted: #6b7684;
+  --color-text-muted: #838c98;
 
   --color-accent: #4a9eff;
   --color-accent-dim: #2d6fbd;
@@ -25,6 +25,12 @@
   --color-gpu: #ff6b9d;
   --color-warn: #f5a623;
   --color-danger: #ff5c5c;
+
+  /* Chart surfaces. Gridlines are decorative and stay quiet; the comparison
+     stroke carries meaning, so it is held well above the 3:1 needed for a
+     graphical object. */
+  --color-chart-grid: #2b323d;
+  --color-chart-comparison: #c2cad6;
 
   --font-mono: ui-monospace, 'Cascadia Mono', 'Segoe UI Mono', Consolas, monospace;
   --font-sans: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
@@ -76,4 +82,95 @@ body {
 /* Tabular numbers everywhere a value changes, so columns do not jitter. */
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------------
+   Desktop widget
+
+   The widget window is frameless and transparent, so the visible surface is
+   drawn here rather than by the OS. Window opacity is applied by the main
+   process on the window itself, which composites the whole thing including its
+   shadow; setting opacity in CSS instead would make text translucent against
+   whatever happens to be behind it.
+   --------------------------------------------------------------------------- */
+.widget-body {
+  background: transparent;
+  overflow: hidden;
+  margin: 0;
+  /* The rounded corners are drawn by .widget-root; anything the body painted
+     outside them would square off the window against the desktop. */
+  border-radius: 10px;
+}
+
+.widget-root {
+  /* Fill the window exactly. The window is sized to the layout, so any gap here
+     would show as transparent desktop inside the widget's own frame. */
+  position: fixed;
+  inset: 0;
+  border-radius: 10px;
+  /* An inset ring rather than a border. The widget window is transparent and
+     often lands on a display with a fractional device pixel ratio, where a 1px
+     border rounds onto half a pixel and drops out along an edge; a ring is
+     painted inside the element and survives that. It also cannot be clipped by
+     the rounded corners the way a border can. */
+  box-shadow: inset 0 0 0 1px var(--color-border-strong);
+  background: rgba(11, 13, 16, 0.94);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  /* Dragging is set per-element by the React tree: the root is the drag handle
+     unless the widget is locked. Interactive children opt back out below. */
+}
+
+.widget-root button,
+.widget-root input {
+  -webkit-app-region: no-drag;
+}
+
+.widget-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.widget-value-sm {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.widget-process {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  min-width: 0;
+}
+
+.widget-divider {
+  width: 1px;
+  height: 12px;
+  background: var(--color-border-strong);
+}
+
+.widget-bar-track {
+  height: 5px;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--color-surface-3);
+  overflow: hidden;
+}
+
+.widget-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 180ms linear;
+}
+
+.widget-unavailable {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--color-text-muted);
 }

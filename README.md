@@ -3,7 +3,8 @@
 A high-accuracy Windows system resource and process monitor built with Electron,
 TypeScript, React, Rust, and native Windows telemetry APIs.
 
-CPU · Memory · Processes — GPU, Disk, Network and History to follow.
+CPU · Memory · Processes · Applications · Desktop widget — GPU, Disk, Network
+and History to follow.
 
 ---
 
@@ -75,6 +76,7 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `pnpm test` | Run the TypeScript test suites |
 | `pnpm test:native` | Run the Rust test suite |
 | `pnpm typecheck` | Type-check every package |
+| `pnpm check:contrast` | Verify every UI colour pair against WCAG contrast minimums |
 | `pnpm native:build` | Build the Rust telemetry module in release mode |
 
 ### Development and validation tools
@@ -86,6 +88,7 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `node tools/devtools.mjs shot <file.png> [page]` | Drive the running app over the DevTools protocol (needs `--remote-debugging-port`) |
 | `node tools/fixtures/cpu-load.mjs [threads] [seconds]` | A controlled CPU workload, on its own |
 | `python tools/generate-icons.py` | Regenerate the application icons from `logo.png` (needs Pillow) |
+| `TASK_MANAGER_TARGET=widget node tools/devtools.mjs shot <file.png>` | Capture the widget window rather than the main one |
 
 ---
 
@@ -205,6 +208,15 @@ provides: package identity first, then the publisher and product declared in the
 executable's version resource, then the executable path. Every group states which
 signal formed it and expands to the raw processes underneath.
 
+**Desktop widget** — a frameless, always-on-top overlay in four layouts
+(minimal, compact, performance, top consumers), with selectable metrics,
+adjustable opacity, click-through, position lock, edge snapping and persisted
+placement. It is a second window in the same application reading the same
+snapshot stream, so it cannot disagree with the main window.
+
+**Tray** — live tooltip from the same snapshots, and the menu that controls the
+widget. It is also the guaranteed way out of click-through mode.
+
 **Self-measurement** — per-subsystem collection cost, duty cycle, dropped
 snapshots, tracked identity count.
 
@@ -254,9 +266,12 @@ error of −2.01% attributable to scheduler contention on an already-busy machin
   open have no path or version resource, so they group by image name alone —
   which is why all inaccessible `svchost.exe` instances land in one row. The
   grouping basis is shown on every row so this is visible rather than implied.
+- **The widget can only show what is collected.** GPU, VRAM, disk and network
+  appear in its metric picker but are disabled and labelled "not yet collected",
+  because a blank or zeroed tile would imply a measurement that was never taken.
 - **Not yet collected:** GPU, VRAM, disk throughput, network throughput,
   per-process disk and network attribution, file-level I/O attribution,
-  persistent history, tray, desktop widget.
+  persistent history.
 - **Windows 11 x64 only.** The collectors are deliberately Windows-native; there
   is no cross-platform abstraction compromising them.
 

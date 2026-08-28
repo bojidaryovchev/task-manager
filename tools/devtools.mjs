@@ -18,15 +18,26 @@
 
 const PORT = Number(process.env.TASK_MANAGER_DEBUG_PORT ?? 9222);
 
+/**
+ * Which window to attach to.
+ *
+ * The main window and the desktop widget are separate page targets whose titles
+ * both start with "Task Manager", so they are told apart by the document that
+ * is loaded rather than by title.
+ */
+const WHICH = process.env.TASK_MANAGER_TARGET === 'widget' ? 'widget' : 'main';
+
 async function findRendererTarget() {
   const response = await fetch(`http://127.0.0.1:${PORT}/json/list`);
   const targets = await response.json();
-  const target = targets.find(
-    (t) => t.type === 'page' && (t.title.includes('Task Manager') || t.url.includes('index.html')),
-  );
+  const pages = targets.filter((t) => t.type === 'page');
+  const wanted = WHICH === 'widget' ? 'widget.html' : 'index.html';
+  const target =
+    pages.find((t) => t.url.includes(wanted)) ??
+    (WHICH === 'main' ? pages.find((t) => t.title.includes('Task Manager')) : undefined);
   if (!target) {
     throw new Error(
-      `No Task Manager page target on port ${PORT}. Targets: ${targets
+      `No ${WHICH} page target on port ${PORT}. Targets: ${targets
         .map((t) => `${t.type}:${t.title}`)
         .join(', ')}`,
     );
@@ -145,6 +156,7 @@ function navigateExpression(pageId) {
     overview: 'Overview',
     processes: 'Processes',
     applications: 'Applications',
+    widget: 'Widget',
     cpu: 'CPU',
     memory: 'Memory',
     debug: 'Debug telemetry',

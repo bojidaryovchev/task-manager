@@ -1,0 +1,80 @@
+import { memo } from 'react';
+import type { WidgetMetricId, WidgetSettings } from '@shared/widget';
+import { Chart } from '../../components/Chart.js';
+import { useTelemetry } from '../../lib/hooks.js';
+import {
+  telemetryStore,
+  type SystemSeriesName,
+} from '../../lib/telemetry-store.js';
+import { useWidgetMetric } from '../metrics.js';
+
+/**
+ * Each metric with a short history graph.
+ *
+ * The graphs are the same canvas `Chart` the main window uses: it subscribes to
+ * the store and redraws imperatively, so a new snapshot never re-renders the
+ * widget's React tree. The buffers are the shared bounded ring buffers, so a
+ * widget left running for a week costs the same memory as one just opened.
+ */
+
+/** A 30-second window at the default 500 ms interval. */
+const WINDOW_SAMPLES = 60;
+
+/** Which stored series backs each metric, when one does. */
+const SERIES_FOR: Partial<Record<WidgetMetricId, SystemSeriesName>> = {
+  cpuUtilization: 'cpuTimeUtilization',
+  cpuUtility: 'cpuProcessorUtility',
+  cpuBusiest: 'cpuBusiest',
+  memoryPercent: 'memoryPercent',
+  memoryUsed: 'memoryUsedBytes',
+};
+
+export function PerformanceLayout({
+  settings,
+}: {
+  settings: WidgetSettings;
+}): React.JSX.Element {
+  return (
+    <div className="flex h-full flex-col gap-1.5 px-2.5 py-2">
+      {settings.metrics.map((id) => (
+        <PerformanceRow key={id} id={id} />
+      ))}
+    </div>
+  );
+}
+
+const PerformanceRow = memo(function PerformanceRow({ id }: { id: WidgetMetricId }) {
+  const metric = useWidgetMetric(id);
+  const seriesName = SERIES_FOR[id];
+  // Memory in bytes has no fixed ceiling, so its graph scales to the machine's
+  // installed memory rather than to whatever the highest sample happened to be.
+  const totalMemoryBytes = useTelemetry((snapshot) =>
+    id === 'memoryUsed' ? (snapshot?.memory.totalPhysicalBytes ?? null) : null,
+  );
+
+  return (
+    <div className="min-h-0 flex-1" title={metric.definition}>
+      <div className="flex items-baseline justify-between">
+        <span className="widget-label">{metric.label}</span>
+        <span className="tnum widget-value-sm" style={{ color: metric.accent }}>
+          {metric.text}
+        </span>
+      </div>
+      {seriesName && (
+        <Chart
+          height={30}
+          gridLines={0}
+          windowSamples={WINDOW_SAMPLES}
+          max={id === 'memoryUsed' ? (totalMemoryBytes ?? undefined) : 100}
+          series={[
+            {
+              buffer: telemetryStore.system.get(seriesName),
+              color: metric.accent,
+              fill: true,
+            },
+          ]}
+        />
+      )}
+    </div>
+  );
+});

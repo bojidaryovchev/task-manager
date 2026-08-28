@@ -21,7 +21,7 @@ export function CpuPage(): React.JSX.Element {
                 {
                   buffer: telemetryStore.system.get('cpuTimeUtilization'),
                   color: 'var(--color-cpu)',
-                  fill: 'rgba(74,158,255,0.14)',
+                  fill: true,
                 },
                 {
                   buffer: telemetryStore.system.get('cpuProcessorUtility'),
@@ -29,7 +29,7 @@ export function CpuPage(): React.JSX.Element {
                 },
                 {
                   buffer: telemetryStore.system.get('cpuBusiest'),
-                  color: 'rgba(255,255,255,0.30)',
+                  color: 'var(--color-chart-comparison)',
                   dashed: true,
                 },
               ]}
@@ -107,7 +107,7 @@ function Legend(): React.JSX.Element {
   const items = [
     { color: 'var(--color-cpu)', label: 'Time utilization' },
     { color: 'var(--color-warn)', label: 'Processor utility (Task Manager)' },
-    { color: 'rgba(255,255,255,0.30)', label: 'Busiest logical processor' },
+    { color: 'var(--color-chart-comparison)', label: 'Busiest logical processor' },
   ];
   return (
     <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-text-secondary">
@@ -236,7 +236,7 @@ const ProcessorTile = memo(function ProcessorTile({ index }: { index: number }) 
             {
               buffer,
               color: 'var(--color-cpu)',
-              fill: 'rgba(74,158,255,0.18)',
+              fill: true,
             },
           ]}
         />

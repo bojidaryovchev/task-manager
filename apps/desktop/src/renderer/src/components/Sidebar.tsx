@@ -9,6 +9,7 @@ export type PageId =
   | 'applications'
   | 'cpu'
   | 'memory'
+  | 'widget'
   | 'debug';
 
 interface NavItem {
@@ -23,6 +24,7 @@ const ITEMS: NavItem[] = [
   { id: 'applications', label: 'Applications', accent: 'var(--color-text-secondary)' },
   { id: 'cpu', label: 'CPU', accent: 'var(--color-cpu)' },
   { id: 'memory', label: 'Memory', accent: 'var(--color-memory)' },
+  { id: 'widget', label: 'Widget', accent: 'var(--color-disk)' },
   { id: 'debug', label: 'Debug telemetry', accent: 'var(--color-warn)' },
 ];
 
