@@ -4,6 +4,25 @@
 export declare class TelemetryEngine {
   constructor(config?: JsCollectorConfig | undefined | null)
   /**
+   * Enable persistent history, writing to `path`.
+   *
+   * Nothing is created and nothing is written until this is called: a run
+   * with history off must not touch the disk on the collector's account.
+   */
+  enableHistory(path: string): void
+  /** Turn history off. Existing rows are left on disk. */
+  disableHistory(): void
+  /**
+   * Read a window of history, choosing the finest tier that covers the span.
+   *
+   * Opens its own read-only connection rather than sharing the sampling
+   * thread's: WAL mode means this cannot block a write, so the UI asking for
+   * a week of data never stalls the sampler.
+   */
+  queryHistory(fromUnixMs: number, toUnixMs: number): JsHistoryResult
+  /** Rows currently stored per tier, for the debug view. */
+  historyTiers(): Array<JsHistoryTier>
+  /**
    * Start sampling. `on_snapshot` is called on the JavaScript thread once per
    * interval. Calling `start` while already running is a no-op.
    */
@@ -38,6 +57,8 @@ export interface JsCollectionDiagnostics {
   cpuDurationMs: number
   memoryDurationMs: number
   processDurationMs: number
+  /** Disk, network and GPU together: they all read from one PDH query. */
+  deviceDurationMs: number
   issues: Array<JsCollectorIssue>
   droppedSnapshots: number
   /**
@@ -107,11 +128,106 @@ export interface JsCpuTopology {
   baseFrequencyMhz?: number
 }
 
+export interface JsDiskSnapshot {
+  /** PDH instance name, e.g. `0 C: D:`. */
+  instance: string
+  /** Physical disk number, when the instance name carried one. */
+  index?: number
+  /** Drive letters on this physical disk. */
+  volumes: Array<string>
+  readBytesPerSecond: number
+  writeBytesPerSecond: number
+  totalBytesPerSecond: number
+  /** `100 - % Idle Time`, the basis Task Manager uses for "Active time". */
+  activeTimePercent?: number
+  averageReadLatencyMs?: number
+  averageWriteLatencyMs?: number
+  queueLength?: number
+  readsPerSecond?: number
+  writesPerSecond?: number
+}
+
+export interface JsDisksSnapshot {
+  disks: Array<JsDiskSnapshot>
+  /** The `_Total` instance PDH synthesises, when present. */
+  total?: JsDiskSnapshot
+  /** True when the PhysicalDisk counter set could not be registered. */
+  unavailable: boolean
+}
+
 export interface JsGetSystemTimesDelta {
   idleDelta100ns: number
   kernelDelta100ns: number
   userDelta100ns: number
   utilizationPercent: number
+}
+
+export interface JsGpuAdapterSnapshot {
+  /** LUID key matching the PDH instance names, e.g. `0x00000000_0x000194b3`. */
+  luid: string
+  /** Adapter description from DXGI, absent when DXGI could not enumerate. */
+  name?: string
+  isSoftware: boolean
+  /** Maximum across engine types - never a sum, because engines run concurrently. */
+  utilisationPercent?: number
+  engines: Array<JsGpuEngineSnapshot>
+  dedicatedMemoryUsedBytes?: number
+  dedicatedMemoryTotalBytes?: number
+  sharedMemoryUsedBytes?: number
+  sharedMemoryTotalBytes?: number
+}
+
+export interface JsGpuEngineSnapshot {
+  /** Raw engine type from the counter, e.g. `3d`, `videodecode`. */
+  engine: string
+  /** Friendlier label for the same engine. */
+  label: string
+  utilisationPercent: number
+}
+
+export interface JsGpuSnapshot {
+  adapters: Array<JsGpuAdapterSnapshot>
+  /** True when the GPU counter sets could not be registered. */
+  unavailable: boolean
+}
+
+export interface JsHistoryPoint {
+  timestampUnixMs: number
+  cpuTimePercent?: number
+  cpuUtilityPercent?: number
+  cpuBusiestPercent?: number
+  memoryUsedBytes?: number
+  memoryAvailableBytes?: number
+  memoryCommittedBytes?: number
+  diskReadBytesPerSecond?: number
+  diskWriteBytesPerSecond?: number
+  diskActivePercent?: number
+  networkDownBytesPerSecond?: number
+  networkUpBytesPerSecond?: number
+  gpuPercent?: number
+  gpuMemoryBytes?: number
+  processCount?: number
+  threadCount?: number
+  handleCount?: number
+  /** Peak within the window, which a mean would otherwise hide. */
+  cpuTimePeakPercent?: number
+  memoryUsedPeakBytes?: number
+  diskTotalPeakBytesPerSecond?: number
+}
+
+export interface JsHistoryResult {
+  points: Array<JsHistoryPoint>
+  /** Which retention tier answered the query. */
+  tier: number
+  /** Nominal resolution of that tier, in milliseconds. */
+  resolutionMs: number
+  /** False when history is disabled or the database could not be opened. */
+  available: boolean
+}
+
+export interface JsHistoryTier {
+  tier: number
+  rowCount: number
 }
 
 export interface JsHostInfo {
@@ -204,6 +320,26 @@ export interface JsMemorySnapshot {
   debug?: JsMemoryDebugSample
 }
 
+export interface JsNetworkInterfaceSnapshot {
+  name: string
+  receivedBytesPerSecond: number
+  sentBytesPerSecond: number
+  totalBytesPerSecond: number
+  linkSpeedBitsPerSecond?: number
+  receivedPacketsPerSecond?: number
+  sentPacketsPerSecond?: number
+  outboundDiscardsPerSecond?: number
+  isLoopback: boolean
+}
+
+export interface JsNetworkSnapshot {
+  interfaces: Array<JsNetworkInterfaceSnapshot>
+  /** Summed over non-loopback interfaces. */
+  receivedBytesPerSecond: number
+  sentBytesPerSecond: number
+  unavailable: boolean
+}
+
 export interface JsProcessesSnapshot {
   processes: Array<JsProcessSnapshot>
   totalCount: number
@@ -264,6 +400,15 @@ export interface JsProcessSnapshot {
   ioReadBytesPerSecond?: number
   ioWriteBytesPerSecond?: number
   /**
+   * Maximum GPU engine utilisation for this process, 0..100. Absent when the
+   * GPU counter set is unavailable or the process used no GPU.
+   */
+  gpuPercent?: number
+  /** Dedicated (on-board) GPU memory attributed to this process. */
+  gpuDedicatedMemoryBytes?: number
+  /** Shared (system) GPU memory attributed to this process. */
+  gpuSharedMemoryBytes?: number
+  /**
    * Reason the handle-derived fields are missing, when they are.
    *
    * Declared with an explicit TypeScript union so the generated declaration
@@ -281,6 +426,9 @@ export interface JsSystemSnapshot {
   cpu: JsCpuSnapshot
   memory: JsMemorySnapshot
   processes?: JsProcessesSnapshot
+  disks: JsDisksSnapshot
+  network: JsNetworkSnapshot
+  gpu: JsGpuSnapshot
   diagnostics: JsCollectionDiagnostics
 }
 

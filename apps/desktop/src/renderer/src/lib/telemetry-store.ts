@@ -20,7 +20,12 @@ export type SystemSeriesName =
   | 'cpuBusiest'
   | 'memoryPercent'
   | 'memoryUsedBytes'
-  | 'memoryCommittedBytes';
+  | 'memoryCommittedBytes'
+  | 'diskReadBytes'
+  | 'diskWriteBytes'
+  | 'networkDownBytes'
+  | 'networkUpBytes'
+  | 'gpuUtilisation';
 
 /**
  * The renderer's single source of truth for telemetry.
@@ -47,6 +52,11 @@ export class TelemetryStore {
       'memoryPercent',
       'memoryUsedBytes',
       'memoryCommittedBytes',
+      'diskReadBytes',
+      'diskWriteBytes',
+      'networkDownBytes',
+      'networkUpBytes',
+      'gpuUtilisation',
     ],
     LIVE_HISTORY_SAMPLES,
   );
@@ -102,6 +112,22 @@ export class TelemetryStore {
       memoryPercent: snapshot.memory.physicalUtilizationPercent,
       memoryUsedBytes: snapshot.memory.usedPhysicalBytes,
       memoryCommittedBytes: snapshot.memory.committedBytes,
+      diskReadBytes: snapshot.disks.total?.readBytesPerSecond,
+      diskWriteBytes: snapshot.disks.total?.writeBytesPerSecond,
+      networkDownBytes: snapshot.network.unavailable
+        ? undefined
+        : snapshot.network.receivedBytesPerSecond,
+      networkUpBytes: snapshot.network.unavailable
+        ? undefined
+        : snapshot.network.sentBytesPerSecond,
+      // The busiest adapter, which is what an overview cares about.
+      gpuUtilisation: snapshot.gpu.adapters
+        .map((adapter) => adapter.utilisationPercent)
+        .filter((value): value is number => value !== undefined)
+        .reduce<number | undefined>(
+          (best, value) => (best === undefined ? value : Math.max(best, value)),
+          undefined,
+        ),
     });
     for (const processor of snapshot.cpu.perLogicalProcessor) {
       let series = this.perProcessor.get(processor.index);

@@ -7,8 +7,9 @@ each metric means, see [`telemetry.md`](telemetry.md).
 
 ```
 COLLECTION      Windows APIs        native/telemetry/src/win/
-CALCULATION     Rust collectors     native/telemetry/src/{cpu,memory,process}/
+CALCULATION     Rust collectors     native/telemetry/src/{cpu,memory,process,disk,network,gpu}/
 AGGREGATION     Sampling engine     native/telemetry/src/sampling/
+PERSISTENCE     Tiered history      native/telemetry/src/history/
 TRANSPORT       N-API + IPC         native/telemetry/src/api.rs, apps/desktop/src/{main,preload}/
 PRESENTATION    React               apps/desktop/src/renderer/
 ```
@@ -124,6 +125,42 @@ it off again.
 a window larger than what is drawn shows as dead transparent space inside the
 widget's own outline. `widgetLayoutSize` derives the size from the layout and the
 number of selected metrics.
+
+## One PDH query, one collection
+
+Disk, network, GPU and the two frequency-aware CPU counters all come from PDH.
+They share a single query, collected exactly once per interval, because PDH
+derives its rates from the gap between consecutive collections: collecting
+per-subsystem would silently change what every rate meant. A counter set missing
+on a machine simply yields no counter id and its owner reports values as
+unavailable, so a machine with no discrete GPU costs nothing and shows nothing
+rather than zeros.
+
+Measured cost of the whole PDH read, including disk, network and GPU: under 1 ms
+per sample.
+
+## History
+
+Persistence lives in the native layer, in SQLite compiled from the bundled
+amalgamation so neither a build nor a shipped binary needs anything installed.
+
+Four retention tiers — every sample for 10 minutes, 5-second means for an hour,
+1-minute means for a day, 5-minute means for a week — around 5400 rows in total,
+so the database stays a few hundred kilobytes however long the application runs.
+
+A tier is **not** built by re-reading and re-aggregating the tier below it, which
+would need bookkeeping to know what had already been rolled up. Each tier keeps
+an in-memory accumulator that every sample is added to; when its window elapses
+it writes one row and resets. Each row is therefore an exact mean over its
+window computed from every sample, not a mean of means.
+
+Peaks are stored beside the means. A five-minute average hides exactly the spike
+a post-hoc question is about.
+
+Reads open their own connection. SQLite in WAL mode lets a reader run without
+blocking the writer, so the UI asking for a week of history never stalls the
+sampler. With history disabled no database is opened and nothing is written —
+the collector's only disk activity.
 
 ## Colour and contrast
 

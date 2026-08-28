@@ -3,8 +3,8 @@
 A high-accuracy Windows system resource and process monitor built with Electron,
 TypeScript, React, Rust, and native Windows telemetry APIs.
 
-CPU · Memory · Processes · Applications · Desktop widget — GPU, Disk, Network
-and History to follow.
+CPU · Memory · Processes · Applications · GPU · Disk · Network · History ·
+Desktop widget
 
 ---
 
@@ -208,6 +208,23 @@ provides: package identity first, then the publisher and product declared in the
 executable's version resource, then the executable path. Every group states which
 signal formed it and expands to the raw processes underneath.
 
+**GPU** — adapters from DXGI joined to the Windows GPU counter sets by LUID:
+per-adapter utilisation (the maximum across engine types, never a sum),
+per-engine-type breakdown, dedicated and shared memory, and per-process GPU
+usage and memory.
+
+**Disk** — per physical disk read/write throughput, active time, average read
+and write latency, queue length and IOPS, from the `PhysicalDisk` counter set.
+
+**Network** — per adapter send/receive throughput, link speed, packet rates and
+outbound discards, with loopback flagged and excluded from totals.
+
+**History** — tiered persistent history in SQLite: every sample for 10 minutes,
+5-second means for an hour, 1-minute means for a day, 5-minute means for a week.
+Each point carries the peak within its window alongside the mean, because an
+average hides the spike a post-hoc question is about. Around 5400 rows total, so
+the database stays a few hundred kilobytes however long it runs.
+
 **Desktop widget** — a frameless, always-on-top overlay in four layouts
 (minimal, compact, performance, top consumers), with selectable metrics,
 adjustable opacity, click-through, position lock, edge snapping and persisted
@@ -266,12 +283,19 @@ error of −2.01% attributable to scheduler contention on an already-busy machin
   open have no path or version resource, so they group by image name alone —
   which is why all inaccessible `svchost.exe` instances land in one row. The
   grouping basis is shown on every row so this is visible rather than implied.
-- **The widget can only show what is collected.** GPU, VRAM, disk and network
-  appear in its metric picker but are disabled and labelled "not yet collected",
-  because a blank or zeroed tile would imply a measurement that was never taken.
-- **Not yet collected:** GPU, VRAM, disk throughput, network throughput,
-  per-process disk and network attribution, file-level I/O attribution,
-  persistent history.
+- **GPU utilisation is a maximum, not a sum.** Engines run concurrently, so
+  summing them would report well over 100% for an idle-ish GPU. This matches
+  Task Manager; the per-engine breakdown is shown so a video-decode-bound
+  workload is still visible as such.
+- **Per-process disk and network attribution is not implemented.** The process
+  I/O columns come from Windows' general-purpose I/O counters, which mix file,
+  network and device traffic; they are labelled "I/O", not "Disk". Real
+  attribution needs ETW.
+- **History covers system-wide metrics only.** Per-process history, and
+  file-level I/O attribution, are not implemented.
+- **CPU temperature is not collected.** Windows exposes no reliable
+  vendor-neutral source for it, so the widget does not offer it rather than
+  depending on undocumented vendor interfaces.
 - **Windows 11 x64 only.** The collectors are deliberately Windows-native; there
   is no cross-platform abstraction compromising them.
 

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import type {
   CollectorConfig,
+  HistoryResult,
+  HistoryTier,
   HostInfo,
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
@@ -28,6 +30,10 @@ export interface NativeEngine {
   getLatestSnapshot(): SystemSnapshot | null;
   getConfig(): CollectorConfig;
   setConfig(config: CollectorConfig): CollectorConfig;
+  enableHistory(path: string): void;
+  disableHistory(): void;
+  queryHistory(fromUnixMs: number, toUnixMs: number): HistoryResult;
+  historyTiers(): HistoryTier[];
 }
 
 export interface NativeLoadResult {

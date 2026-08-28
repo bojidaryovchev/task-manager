@@ -28,6 +28,12 @@ const api: TaskManagerApi = {
     };
   },
 
+  queryHistory: (fromUnixMs: number, toUnixMs: number) =>
+    ipcRenderer.invoke(IpcChannel.QueryHistory, fromUnixMs, toUnixMs),
+  getHistoryStatus: () => ipcRenderer.invoke(IpcChannel.GetHistoryStatus),
+  setHistoryEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke(IpcChannel.SetHistoryEnabled, enabled === true),
+
   getWidgetSettings: () => ipcRenderer.invoke(IpcChannel.GetWidgetSettings),
   setWidgetSettings: (patch: Partial<WidgetSettings>) =>
     ipcRenderer.invoke(IpcChannel.SetWidgetSettings, patch),

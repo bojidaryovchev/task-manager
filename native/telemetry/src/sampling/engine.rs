@@ -23,13 +23,19 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::api::{
-    cpu_to_js, memory_to_js, processes_to_js, topology_to_js, CpuConversionContext,
-    JsCollectionDiagnostics, JsCollectorConfig, JsCollectorIssue, JsSystemSnapshot,
+    cpu_to_js, disks_to_js, gpu_to_js, memory_to_js, network_to_js, processes_to_js,
+    topology_to_js, CpuConversionContext, JsCollectionDiagnostics, JsCollectorConfig,
+    JsCollectorIssue, JsSystemSnapshot,
 };
 use crate::clock::{wall_clock_unix_ms, MonotonicClock};
 use crate::cpu::CpuCollector;
+use crate::disk::DiskCollector;
+use crate::gpu::GpuCollector;
+use crate::history::{HistorySample, HistoryStore};
 use crate::memory::MemoryCollector;
+use crate::network::NetworkCollector;
 use crate::process::ProcessCollector;
+use crate::win::pdh::{PdhCpuCounters, PdhCpuSample, PdhQuery};
 
 use windows_sys::Win32::System::SystemInformation::GetTickCount64;
 
@@ -92,6 +98,9 @@ impl SharedConfig {
 /// State shared between the sampling thread and the N-API surface.
 pub struct EngineState {
     pub config: SharedConfig,
+    /// Where history is written, or `None` to keep it off entirely. With it off
+    /// nothing is opened and nothing is written.
+    pub history_path: Mutex<Option<String>>,
     pub running: AtomicBool,
     pub latest: Mutex<Option<JsSystemSnapshot>>,
     pub sequence: AtomicU64,
@@ -103,6 +112,7 @@ impl EngineState {
     pub fn new(config: &JsCollectorConfig) -> Self {
         Self {
             config: SharedConfig::new(config),
+            history_path: Mutex::new(None),
             running: AtomicBool::new(false),
             latest: Mutex::new(None),
             sequence: AtomicU64::new(0),
@@ -116,6 +126,18 @@ pub struct Collectors {
     cpu: CpuCollector,
     memory: MemoryCollector,
     processes: ProcessCollector,
+    disk: DiskCollector,
+    network: NetworkCollector,
+    gpu: GpuCollector,
+    /// One PDH query serving every subsystem. Collected exactly once per
+    /// interval: PDH derives its rates from the gap between collections, so
+    /// collecting per-subsystem would silently change what each rate means.
+    pdh: Option<PdhQuery>,
+    pdh_cpu: Option<PdhCpuCounters>,
+    /// Opened lazily on the first sample, so a run with history off never
+    /// touches the disk.
+    history: Option<HistoryStore>,
+    history_opened: bool,
     clock: MonotonicClock,
     last_monotonic_ms: Option<f64>,
 }
@@ -124,12 +146,51 @@ impl Collectors {
     pub fn new() -> Self {
         let cpu = CpuCollector::new();
         let logical_processor_count = cpu.topology().logical_processor_count();
+
+        // Register every PDH counter into one query up front. A counter set
+        // missing on this machine simply yields no counter id, and the owning
+        // collector reports its values as unavailable.
+        let mut pdh = PdhQuery::open();
+        let (pdh_cpu, disk, network, gpu) = match pdh.as_mut() {
+            Some(query) => (
+                Some(PdhCpuCounters::register(query)),
+                DiskCollector::register(query),
+                NetworkCollector::register(query),
+                GpuCollector::register(query),
+            ),
+            None => (
+                None,
+                DiskCollector::unavailable(),
+                NetworkCollector::unavailable(),
+                GpuCollector::unavailable(),
+            ),
+        };
+
         Self {
             processes: ProcessCollector::new(logical_processor_count),
             memory: MemoryCollector::new(),
             cpu,
+            disk,
+            network,
+            gpu,
+            pdh,
+            pdh_cpu,
+            history: None,
+            history_opened: false,
             clock: MonotonicClock::new(),
             last_monotonic_ms: None,
+        }
+    }
+
+    /// The history store, if history is enabled and could be opened.
+    pub fn history(&self) -> Option<&HistoryStore> {
+        self.history.as_ref()
+    }
+
+    /// Write anything buffered. Called before the engine stops.
+    pub fn flush_history(&mut self) {
+        if let Some(history) = self.history.as_mut() {
+            history.flush();
         }
     }
 
@@ -146,6 +207,11 @@ impl Collectors {
             .last_monotonic_ms
             .map(|previous| monotonic_ms - previous);
         self.last_monotonic_ms = Some(monotonic_ms);
+
+        // One PDH collection for the whole interval, before anything reads it.
+        if let Some(query) = self.pdh.as_mut() {
+            query.collect();
+        }
 
         let include_debug = state.config.collect_debug.load(Ordering::Relaxed);
         let collect_processes = state.config.collect_processes.load(Ordering::Relaxed);
@@ -172,7 +238,11 @@ impl Collectors {
         // utilization fields stay empty regardless.
         let cpu_interval_ms = interval_ms
             .unwrap_or_else(|| f64::from(state.config.interval_ms.load(Ordering::Relaxed)));
-        let cpu_sample = self.cpu.sample(cpu_interval_ms);
+        let pdh_cpu_sample = match (self.pdh.as_ref(), self.pdh_cpu.as_ref()) {
+            (Some(query), Some(counters)) => counters.read(query),
+            _ => PdhCpuSample::default(),
+        };
+        let cpu_sample = self.cpu.sample(cpu_interval_ms, pdh_cpu_sample);
         let cpu_duration_ms = cpu_started.elapsed().as_secs_f64() * 1000.0;
         if let Some(reason) = cpu_sample.debug.discard_reason {
             // A discarded first sample is expected, not a problem worth
@@ -193,7 +263,7 @@ impl Collectors {
 
         // --- processes
         let process_started = Instant::now();
-        let processes_sample = if collect_processes {
+        let mut processes_sample = if collect_processes {
             Some(self.processes.sample(interval_ms, collect_command_lines))
         } else {
             None
@@ -210,6 +280,24 @@ impl Collectors {
             }
         }
 
+        // --- disk, network and GPU, all from the shared PDH query
+        let devices_started = Instant::now();
+        let (disks_sample, network_sample, gpu_sample) = match self.pdh.as_ref() {
+            Some(query) => (
+                self.disk.sample(query),
+                self.network.sample(query),
+                self.gpu.sample(query),
+            ),
+            None => Default::default(),
+        };
+        let devices_duration_ms = devices_started.elapsed().as_secs_f64() * 1000.0;
+
+        // GPU usage is per-PID, so it joins onto the process list rather than
+        // being collected with it.
+        if let Some(sample) = processes_sample.as_mut() {
+            ProcessCollector::attach_gpu(sample, &gpu_sample.by_process);
+        }
+
         // (processes, threads, handles) summed from our own enumeration.
         let process_counts = processes_sample.as_ref().map(|sample| {
             let mut threads = 0u32;
@@ -221,7 +309,17 @@ impl Collectors {
             (sample.total_count as u32, threads, handles)
         });
 
-        let pdh_paths = self.cpu.active_pdh_counters();
+        let pdh_paths: Vec<String> = self
+            .pdh
+            .as_ref()
+            .map(|query| {
+                query
+                    .registered_paths()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
         let topology = topology_to_js(
             self.cpu.topology(),
             self.cpu.brand_string(),
@@ -258,6 +356,17 @@ impl Collectors {
             None => empty_memory_snapshot(),
         };
 
+        // --- history
+        self.record_history(
+            state,
+            monotonic_ms,
+            &cpu_sample,
+            memory_sample.as_ref(),
+            &disks_sample,
+            &network_sample,
+            &gpu_sample,
+        );
+
         let sequence = state.sequence.fetch_add(1, Ordering::Relaxed);
 
         JsSystemSnapshot {
@@ -268,11 +377,15 @@ impl Collectors {
             cpu,
             memory,
             processes: processes_sample.as_ref().map(processes_to_js),
+            disks: disks_to_js(&disks_sample),
+            network: network_to_js(&network_sample),
+            gpu: gpu_to_js(&gpu_sample),
             diagnostics: JsCollectionDiagnostics {
                 total_duration_ms: started.elapsed().as_secs_f64() * 1000.0,
                 cpu_duration_ms,
                 memory_duration_ms,
                 process_duration_ms,
+                device_duration_ms: devices_duration_ms,
                 issues,
                 dropped_snapshots: state.dropped.load(Ordering::Relaxed),
                 tracked_process_count: self.processes.tracked_process_count() as u32,
@@ -349,5 +462,94 @@ where
                 left -= chunk;
             }
         }
+    }
+    // Anything buffered when the loop stops still belongs on disk.
+    collectors.flush_history();
+}
+
+impl Collectors {
+    /// Feed one sample into the history store, opening it on first use.
+    ///
+    /// History is the only thing in the collector that touches the disk, so it
+    /// stays entirely inert until a path is configured: no file is created and
+    /// nothing is written for a run with history off.
+    #[allow(clippy::too_many_arguments)]
+    fn record_history(
+        &mut self,
+        state: &EngineState,
+        monotonic_ms: f64,
+        cpu: &crate::cpu::CpuSample,
+        memory: Option<&crate::memory::MemorySample>,
+        disks: &crate::disk::DisksSample,
+        network: &crate::network::NetworkSample,
+        gpu: &crate::gpu::GpuSample,
+    ) {
+        let path = state
+            .history_path
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+
+        let Some(path) = path else {
+            // Turned off, or turned off again after being on: drop the store so
+            // its file handle is released.
+            self.history = None;
+            self.history_opened = false;
+            return;
+        };
+
+        if !self.history_opened {
+            self.history_opened = true;
+            self.history = HistoryStore::open(std::path::Path::new(&path)).ok();
+        }
+        let Some(history) = self.history.as_mut() else {
+            return;
+        };
+
+        // The busiest hardware adapter, matching what the overview shows.
+        let hardware = gpu.adapters.iter().filter(|adapter| !adapter.is_software);
+        let gpu_percent = hardware
+            .clone()
+            .filter_map(|adapter| adapter.utilisation_percent)
+            .fold(None::<f64>, |best, value| {
+                Some(best.map_or(value, |best| best.max(value)))
+            });
+        let gpu_memory_bytes = hardware
+            .filter_map(|adapter| adapter.dedicated_memory_used_bytes)
+            .fold(None::<f64>, |best, value| {
+                Some(best.map_or(value, |best| best.max(value)))
+            });
+
+        let counts = memory.and_then(|sample| sample.performance);
+        let sample = HistorySample {
+            cpu_time_percent: cpu.aggregate_time_utilization_percent,
+            cpu_utility_percent: cpu.processor_utility_percent,
+            cpu_busiest_percent: cpu.busiest_logical_processor_percent,
+            memory_used_bytes: memory.map(|m| m.used_physical_bytes() as f64),
+            memory_available_bytes: memory.map(|m| m.global.available_physical_bytes as f64),
+            memory_committed_bytes: memory
+                .and_then(|m| m.committed_bytes())
+                .map(|value| value as f64),
+            disk_read_bytes_per_second: disks.total.as_ref().map(|disk| disk.read_bytes_per_second),
+            disk_write_bytes_per_second: disks
+                .total
+                .as_ref()
+                .map(|disk| disk.write_bytes_per_second),
+            disk_active_percent: disks
+                .total
+                .as_ref()
+                .and_then(|disk| disk.active_time_percent),
+            network_down_bytes_per_second: (!network.unavailable)
+                .then_some(network.received_bytes_per_second),
+            network_up_bytes_per_second: (!network.unavailable)
+                .then_some(network.sent_bytes_per_second),
+            gpu_percent,
+            gpu_memory_bytes,
+            process_count: counts.map(|c| f64::from(c.process_count)),
+            thread_count: counts.map(|c| f64::from(c.thread_count)),
+            handle_count: counts.map(|c| f64::from(c.handle_count)),
+        };
+
+        history.record(monotonic_ms, wall_clock_unix_ms(), &sample);
     }
 }

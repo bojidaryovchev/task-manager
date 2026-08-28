@@ -1,4 +1,10 @@
-import { formatBytes, formatFrequency, formatPercent } from '@task-manager/shared';
+import {
+  formatBitsPerSecond,
+  formatBytes,
+  formatBytesPerSecond,
+  formatFrequency,
+  formatPercent,
+} from '@task-manager/shared';
 import { Chart } from '../components/Chart.js';
 import { Bar, Note, PageShell, Panel, Stat } from '../components/primitives.js';
 import { useHostInfo, useTelemetry } from '../lib/hooks.js';
@@ -19,6 +25,8 @@ export function OverviewPage(): React.JSX.Element {
       <div className="grid gap-4 xl:grid-cols-2">
         <CpuCard />
         <MemoryCard />
+        <GpuCard />
+        <DiskNetworkCard />
       </div>
       <PendingSubsystems />
     </PageShell>
@@ -194,12 +202,148 @@ function MemoryCard(): React.JSX.Element {
   );
 }
 
+function GpuCard(): React.JSX.Element {
+  const gpu = useTelemetry(
+    (snapshot) => {
+      const adapters = (snapshot?.gpu.adapters ?? []).filter((a) => !a.isSoftware);
+      const busiest = adapters.reduce<(typeof adapters)[number] | null>(
+        (best, adapter) =>
+          (adapter.utilisationPercent ?? -1) > (best?.utilisationPercent ?? -1) ? adapter : best,
+        null,
+      );
+      return {
+        unavailable: snapshot?.gpu.unavailable ?? false,
+        name: busiest?.name ?? busiest?.luid ?? null,
+        utilisation: busiest?.utilisationPercent ?? null,
+        used: busiest?.dedicatedMemoryUsedBytes ?? null,
+        total: busiest?.dedicatedMemoryTotalBytes ?? null,
+        topEngine: busiest?.engines[0]?.label ?? null,
+        count: adapters.length,
+      };
+    },
+    (a, b) => a.utilisation === b.utilisation && a.used === b.used && a.name === b.name,
+  );
+
+  return (
+    <Panel title="GPU" hint={gpu.name ?? undefined}>
+      {gpu.unavailable ? (
+        <div className="text-[12px] text-text-secondary">
+          The Windows GPU counter set is unavailable on this machine.
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            <Stat
+              label="Utilisation"
+              value={formatPercent(gpu.utilisation)}
+              accent="var(--color-gpu)"
+              definition="Maximum across engine types on the busiest adapter — never a sum, because GPU engines run concurrently."
+            />
+            <Stat
+              label="Dedicated memory"
+              value={gpu.used === null ? '—' : formatBytes(gpu.used)}
+              small
+              definition="Dedicated video memory in use on that adapter."
+            />
+            <Stat
+              label="Busiest engine"
+              value={gpu.topEngine ?? '—'}
+              small
+              definition="The engine type carrying the most work this interval."
+            />
+          </div>
+          <div className="mt-3">
+            <Chart
+              height={100}
+              max={100}
+              series={[
+                {
+                  buffer: telemetryStore.system.get('gpuUtilisation'),
+                  color: 'var(--color-gpu)',
+                  fill: true,
+                },
+              ]}
+            />
+          </div>
+          <div className="mt-2 text-[11px] text-text-muted">
+            {gpu.count} hardware adapter{gpu.count === 1 ? '' : 's'}
+            {gpu.total !== null && ` · ${formatBytes(gpu.total)} dedicated`}
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+function DiskNetworkCard(): React.JSX.Element {
+  const values = useTelemetry(
+    (snapshot) => ({
+      diskRead: snapshot?.disks.total?.readBytesPerSecond ?? null,
+      diskWrite: snapshot?.disks.total?.writeBytesPerSecond ?? null,
+      diskActive: snapshot?.disks.total?.activeTimePercent ?? null,
+      diskUnavailable: snapshot?.disks.unavailable ?? false,
+      down: snapshot?.network.receivedBytesPerSecond ?? null,
+      up: snapshot?.network.sentBytesPerSecond ?? null,
+      netUnavailable: snapshot?.network.unavailable ?? false,
+    }),
+    (a, b) =>
+      a.diskRead === b.diskRead &&
+      a.diskWrite === b.diskWrite &&
+      a.down === b.down &&
+      a.up === b.up,
+  );
+
+  return (
+    <Panel title="Disk and network">
+      <div className="grid grid-cols-2 gap-4">
+        <Stat
+          label="Disk read"
+          value={values.diskUnavailable ? '—' : formatBytesPerSecond(values.diskRead)}
+          accent="var(--color-disk)"
+          small
+          definition="All physical disks combined."
+        />
+        <Stat
+          label="Disk write"
+          value={values.diskUnavailable ? '—' : formatBytesPerSecond(values.diskWrite)}
+          small
+        />
+        <Stat
+          label="Download"
+          value={values.netUnavailable ? '—' : formatBitsPerSecond(values.down)}
+          accent="var(--color-network)"
+          small
+          definition="Non-loopback adapters only."
+        />
+        <Stat
+          label="Upload"
+          value={values.netUnavailable ? '—' : formatBitsPerSecond(values.up)}
+          small
+        />
+      </div>
+      <div className="mt-3">
+        <Chart
+          height={90}
+          series={[
+            { buffer: telemetryStore.system.get('diskReadBytes'), color: 'var(--color-disk)', fill: true },
+            { buffer: telemetryStore.system.get('diskWriteBytes'), color: 'var(--color-network)' },
+          ]}
+        />
+      </div>
+      <Note>
+        Disk active time is {formatPercent(values.diskActive)}. Loopback traffic is excluded from
+        the network totals.
+      </Note>
+    </Panel>
+  );
+}
+
 /**
  * Subsystems that are not implemented yet are listed explicitly rather than
  * shown as empty gauges, so the UI never implies a measurement it does not have.
  */
 function PendingSubsystems(): React.JSX.Element {
-  const pending = ['GPU', 'Disk', 'Network', 'History'];
+  const pending = ['Persistent history', 'Per-process disk and network attribution'];
   return (
     <div className="mt-4 rounded-lg border border-dashed border-border-subtle px-4 py-3 text-[11px] text-text-muted">
       Not yet collected: {pending.join(' · ')}. These are deliberately absent rather than shown

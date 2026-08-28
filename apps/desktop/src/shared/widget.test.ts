@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  COLLECTED_WIDGET_METRICS,
   DEFAULT_WIDGET_SETTINGS,
+  WIDGET_METRICS,
   WIDGET_OPACITY_MAX,
   WIDGET_OPACITY_MIN,
   normaliseWidgetSettings,
@@ -41,12 +43,23 @@ describe('normaliseWidgetSettings', () => {
     );
   });
 
-  it('drops metrics the collector does not gather', () => {
-    // Selecting GPU today would render a tile with nothing behind it.
+  it('keeps only metrics the collector actually gathers', () => {
+    // Driven off the descriptor list rather than hard-coded ids, so wiring a
+    // new metric into the collector does not silently break this guarantee:
+    // anything not marked collected would render a tile with nothing behind it.
+    const uncollected = WIDGET_METRICS.filter((metric) => !metric.collected).map(
+      (metric) => metric.id,
+    );
     const result = normaliseWidgetSettings({
-      metrics: ['cpuUtilization', 'gpu', 'diskRead', 'memoryPercent'],
+      metrics: [...COLLECTED_WIDGET_METRICS, ...uncollected],
     });
-    expect(result.metrics).toEqual(['cpuUtilization', 'memoryPercent']);
+    expect(result.metrics).toEqual([...COLLECTED_WIDGET_METRICS]);
+    expect(result.metrics).not.toContain(uncollected[0]);
+  });
+
+  it('accepts every metric the descriptor list marks as collected', () => {
+    const result = normaliseWidgetSettings({ metrics: [...COLLECTED_WIDGET_METRICS] });
+    expect(result.metrics).toEqual([...COLLECTED_WIDGET_METRICS]);
   });
 
   it('drops unknown metric ids entirely', () => {
@@ -63,7 +76,7 @@ describe('normaliseWidgetSettings', () => {
 
   it('restores the default set rather than leaving an empty widget', () => {
     // An empty selection would render a blank window with no obvious way back.
-    for (const metrics of [[], ['gpu'], 'not-an-array']) {
+    for (const metrics of [[], ['no-such-metric'], 'not-an-array']) {
       expect(normaliseWidgetSettings({ metrics }).metrics).toEqual(
         DEFAULT_WIDGET_SETTINGS.metrics,
       );

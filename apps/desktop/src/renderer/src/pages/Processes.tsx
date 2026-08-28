@@ -30,6 +30,8 @@ type SortKey =
   | 'commit'
   | 'threads'
   | 'handles'
+  | 'gpu'
+  | 'gpuMemory'
   | 'ioRead'
   | 'ioWrite';
 
@@ -76,6 +78,19 @@ const COLUMNS: Column[] = [
     label: 'Handles',
     width: 80,
     definition: 'Open kernel handles. A steadily climbing count is a handle leak.',
+  },
+  {
+    key: 'gpu',
+    label: 'GPU',
+    width: 70,
+    definition:
+      'Maximum GPU engine utilisation for this process, from the GPU Engine counter set. Engines run concurrently, so this is a maximum rather than a sum.',
+  },
+  {
+    key: 'gpuMemory',
+    label: 'GPU mem',
+    width: 90,
+    definition: 'Dedicated GPU memory attributed to this process.',
   },
   {
     key: 'ioRead',
@@ -528,6 +543,16 @@ const ProcessRow = memo(function ProcessRow({
       <Cell width={96}>{formatBytes(commit)}</Cell>
       <Cell width={72}>{threads}</Cell>
       <Cell width={80}>{formatCount(handles)}</Cell>
+      <Cell width={70}>
+        {process.gpuPercent === undefined || process.gpuPercent === 0
+          ? ''
+          : formatPercent(process.gpuPercent, 1)}
+      </Cell>
+      <Cell width={90}>
+        {process.gpuDedicatedMemoryBytes === undefined || process.gpuDedicatedMemoryBytes === 0
+          ? ''
+          : formatBytes(process.gpuDedicatedMemoryBytes)}
+      </Cell>
       <Cell width={90}>{rate(ioRead)}</Cell>
       <Cell width={90}>{rate(ioWrite)}</Cell>
     </div>
@@ -600,6 +625,10 @@ function processValue(
       return process.threadCount;
     case 'handles':
       return process.handleCount;
+    case 'gpu':
+      return process.gpuPercent;
+    case 'gpuMemory':
+      return process.gpuDedicatedMemoryBytes;
     case 'ioRead':
       return process.ioReadBytesPerSecond;
     case 'ioWrite':
@@ -632,6 +661,12 @@ function nodeValue(
       return subtotal.threadCount;
     case 'handles':
       return subtotal.handleCount;
+    // GPU is not summed over a subtree: it is a maximum over concurrent
+    // engines, and adding two processes' maxima would not mean anything.
+    case 'gpu':
+      return process.gpuPercent;
+    case 'gpuMemory':
+      return process.gpuDedicatedMemoryBytes;
     case 'ioRead':
       return subtotal.ioReadBytesPerSecond;
     case 'ioWrite':

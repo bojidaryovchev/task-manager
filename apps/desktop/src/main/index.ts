@@ -42,6 +42,11 @@ function iconPath(): string | undefined {
   return candidates.find((candidate) => existsSync(candidate));
 }
 
+/** Where the history database lives: alongside the other per-user app data. */
+function historyPath(): string {
+  return join(app.getPath('userData'), 'history.db');
+}
+
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -129,6 +134,16 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     return service.setConfig(safe);
   });
 
+  ipcMain.handle(IpcChannel.QueryHistory, (_event, from: unknown, to: unknown) =>
+    service.queryHistory(typeof from === 'number' ? from : 0, typeof to === 'number' ? to : 0),
+  );
+  ipcMain.handle(IpcChannel.GetHistoryStatus, () => service.historyStatus);
+  ipcMain.handle(IpcChannel.SetHistoryEnabled, (_event, enabled: unknown) => {
+    const wanted = enabled === true;
+    settings?.setHistoryEnabled(wanted);
+    return service.setHistory(historyPath(), wanted);
+  });
+
   ipcMain.handle(IpcChannel.GetWidgetSettings, () => controller.settings);
   ipcMain.handle(IpcChannel.SetWidgetSettings, (_event, patch: unknown) => {
     // The store normalises whatever arrives, so a renderer cannot write an
@@ -167,6 +182,8 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     registerIpc(telemetry, widget);
+    // History before start, so the very first sample is recorded.
+    telemetry.setHistory(historyPath(), settings.history.enabled);
     telemetry.start();
 
     tray = new AppTray({ widget, onShowMainWindow: showMainWindow });

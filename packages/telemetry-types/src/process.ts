@@ -117,6 +117,17 @@ export interface ProcessSnapshot {
   ioReadBytesPerSecond?: number;
   ioWriteBytesPerSecond?: number;
 
+  /**
+   * Maximum GPU engine utilisation for this process, 0..100. From the
+   * `GPU Engine` counter set, keyed by PID. Absent when the counter set is
+   * unavailable or the process touched no GPU.
+   */
+  gpuPercent?: number;
+  /** Dedicated (on-board) GPU memory attributed to this process. */
+  gpuDedicatedMemoryBytes?: number;
+  /** Shared (system) GPU memory attributed to this process. */
+  gpuSharedMemoryBytes?: number;
+
   detailFailure?: ProcessDetailFailure;
 }
 

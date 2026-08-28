@@ -1,4 +1,5 @@
 import type { CpuSnapshot } from './cpu.js';
+import type { DisksSnapshot, GpuSnapshot, NetworkSnapshot } from './devices.js';
 import type { MemorySnapshot } from './memory.js';
 import type { ProcessesSnapshot } from './process.js';
 
@@ -28,6 +29,8 @@ export interface CollectionDiagnostics {
   cpuDurationMs: number;
   memoryDurationMs: number;
   processDurationMs: number;
+  /** Disk, network and GPU together: they all read from one PDH query. */
+  deviceDurationMs: number;
   issues: CollectorIssue[];
   /** Snapshots dropped because JavaScript could not accept them in time. */
   droppedSnapshots: number;
@@ -55,6 +58,9 @@ export interface SystemSnapshot {
   memory: MemorySnapshot;
   /** Absent when process collection is disabled. */
   processes?: ProcessesSnapshot;
+  disks: DisksSnapshot;
+  network: NetworkSnapshot;
+  gpu: GpuSnapshot;
   diagnostics: CollectionDiagnostics;
 }
 

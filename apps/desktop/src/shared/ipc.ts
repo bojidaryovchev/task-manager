@@ -1,4 +1,10 @@
-import type { CollectorConfig, HostInfo, SystemSnapshot } from '@task-manager/telemetry-types';
+import type {
+  CollectorConfig,
+  HistoryResult,
+  HistoryTier,
+  HostInfo,
+  SystemSnapshot,
+} from '@task-manager/telemetry-types';
 import type { WidgetSettings } from './widget.js';
 
 /**
@@ -32,9 +38,25 @@ export const IpcChannel = {
   ShowWidgetMenu: 'widget:showMenu',
   /** main -> renderer push: WidgetSettings */
   WidgetSettingsEvent: 'widget:settings',
+
+  /** invoke: (fromUnixMs, toUnixMs) => HistoryResult */
+  QueryHistory: 'history:query',
+  /** invoke: () => HistoryStatus */
+  GetHistoryStatus: 'history:getStatus',
+  /** invoke: (enabled: boolean) => HistoryStatus */
+  SetHistoryEnabled: 'history:setEnabled',
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
+
+/** Where history is stored and whether it is running. */
+export interface HistoryStatus {
+  enabled: boolean;
+  /** Absolute path of the database, so the UI can say where the data lives. */
+  path: string;
+  /** Rows currently held per retention tier. */
+  tiers: HistoryTier[];
+}
 
 /** Reported when the native module could not be loaded, so the UI can say so. */
 export interface NativeStatus {
@@ -75,4 +97,11 @@ export interface TaskManagerApi {
   showWidgetMenu(x: number, y: number): Promise<void>;
   /** Subscribe to widget settings changes. Returns an unsubscribe function. */
   onWidgetSettings(listener: (settings: WidgetSettings) => void): () => void;
+
+  // --- history -------------------------------------------------------------
+  /** Read a window of history. The finest tier covering the span answers it. */
+  queryHistory(fromUnixMs: number, toUnixMs: number): Promise<HistoryResult>;
+  getHistoryStatus(): Promise<HistoryStatus>;
+  /** Turn recording on or off. With it off nothing is written to disk. */
+  setHistoryEnabled(enabled: boolean): Promise<HistoryStatus>;
 }

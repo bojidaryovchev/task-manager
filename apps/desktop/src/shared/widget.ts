@@ -91,17 +91,43 @@ export const WIDGET_METRICS: readonly WidgetMetricDescriptor[] = [
     definition: 'Physical memory in use, in bytes.',
     collected: true,
   },
-  { id: 'gpu', label: 'GPU', definition: 'Not yet collected.', collected: false },
-  { id: 'vram', label: 'VRAM', definition: 'Not yet collected.', collected: false },
-  { id: 'diskRead', label: 'Disk read', definition: 'Not yet collected.', collected: false },
-  { id: 'diskWrite', label: 'Disk write', definition: 'Not yet collected.', collected: false },
+  {
+    id: 'gpu',
+    label: 'GPU',
+    definition:
+      'Utilisation of the busiest hardware adapter — the maximum across its engine types, never a sum.',
+    collected: true,
+  },
+  {
+    id: 'vram',
+    label: 'VRAM',
+    definition: 'Dedicated video memory in use on the busiest hardware adapter.',
+    collected: true,
+  },
+  {
+    id: 'diskRead',
+    label: 'Disk read',
+    definition: 'Bytes per second read across all physical disks.',
+    collected: true,
+  },
+  {
+    id: 'diskWrite',
+    label: 'Disk write',
+    definition: 'Bytes per second written across all physical disks.',
+    collected: true,
+  },
   {
     id: 'networkDown',
     label: 'Net down',
-    definition: 'Not yet collected.',
-    collected: false,
+    definition: 'Bytes received per second across non-loopback adapters.',
+    collected: true,
   },
-  { id: 'networkUp', label: 'Net up', definition: 'Not yet collected.', collected: false },
+  {
+    id: 'networkUp',
+    label: 'Net up',
+    definition: 'Bytes sent per second across non-loopback adapters.',
+    collected: true,
+  },
 ];
 
 export const COLLECTED_WIDGET_METRICS: readonly WidgetMetricId[] = WIDGET_METRICS.filter(

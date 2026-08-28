@@ -20,12 +20,21 @@ import {
  * events, and none of them is worth a synchronous disk write on its own.
  */
 
+export interface HistorySettings {
+  /** Whether telemetry is recorded to disk at all. */
+  enabled: boolean;
+}
+
 export interface AppSettings {
   widget: WidgetSettings;
+  history: HistorySettings;
 }
 
 const DEFAULTS: AppSettings = {
   widget: { ...DEFAULT_WIDGET_SETTINGS },
+  // On by default: history is what makes "why did this happen five minutes ago"
+  // answerable, and it costs one small buffered write every few seconds.
+  history: { enabled: true },
 };
 
 const WRITE_DEBOUNCE_MS = 400;
@@ -46,6 +55,16 @@ export class SettingsStore {
 
   get widget(): WidgetSettings {
     return this.#settings.widget;
+  }
+
+  get history(): HistorySettings {
+    return this.#settings.history;
+  }
+
+  setHistoryEnabled(enabled: boolean): HistorySettings {
+    this.#settings.history = { enabled: enabled === true };
+    this.#scheduleWrite();
+    return this.#settings.history;
   }
 
   /** Merge a partial change into the widget settings and schedule a save. */
@@ -72,12 +91,16 @@ export class SettingsStore {
       const parsed: unknown = JSON.parse(raw);
       const source = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as {
         widget?: unknown;
+        history?: { enabled?: unknown };
       };
-      return { widget: normaliseWidgetSettings(source.widget) };
+      return {
+        widget: normaliseWidgetSettings(source.widget),
+        history: { enabled: source.history?.enabled !== false },
+      };
     } catch {
       // Missing on first run, and unreadable or corrupt if something went wrong.
       // Either way the right answer is defaults rather than refusing to start.
-      return { widget: { ...DEFAULTS.widget } };
+      return { widget: { ...DEFAULTS.widget }, history: { ...DEFAULTS.history } };
     }
   }
 

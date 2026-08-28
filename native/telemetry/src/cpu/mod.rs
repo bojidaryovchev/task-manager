@@ -28,7 +28,7 @@
 pub mod frequency;
 
 use crate::win::ntdll::{self, SystemProcessorPerformanceInformation};
-use crate::win::pdh::PdhCpuQuery;
+use crate::win::pdh::PdhCpuSample;
 use crate::win::topology::{read_topology, Topology};
 
 use windows_sys::Win32::Foundation::FILETIME;
@@ -109,7 +109,6 @@ pub struct CpuCollector {
     /// Previous per-processor counters, in flat index order.
     previous: Option<Vec<SystemProcessorPerformanceInformation>>,
     previous_system_times: Option<(u64, u64, u64)>,
-    pdh: Option<PdhCpuQuery>,
     frequency: frequency::FrequencyReader,
     base_frequency_mhz: Option<u32>,
     brand_string: Option<String>,
@@ -126,7 +125,6 @@ impl CpuCollector {
             frequency: frequency::FrequencyReader::new(topology.logical_processor_count()),
             base_frequency_mhz: frequency::read_base_frequency_mhz(),
             brand_string: frequency::read_processor_brand_string(),
-            pdh: PdhCpuQuery::open(),
             previous: None,
             previous_system_times: None,
             multi_group,
@@ -144,17 +142,6 @@ impl CpuCollector {
 
     pub fn brand_string(&self) -> Option<&str> {
         self.brand_string.as_deref()
-    }
-
-    pub fn pdh_available(&self) -> bool {
-        self.pdh.is_some()
-    }
-
-    pub fn active_pdh_counters(&self) -> Vec<&'static str> {
-        self.pdh
-            .as_ref()
-            .map(|p| p.active_counter_paths())
-            .unwrap_or_default()
     }
 
     /// Read the per-processor counters, handling multi-group machines.
@@ -200,17 +187,15 @@ impl CpuCollector {
     /// Produce a sample for the interval that just elapsed.
     ///
     /// `interval_ms` must come from a monotonic clock and be the *measured*
-    /// elapsed time, not the configured interval.
+    /// elapsed time, not the configured interval. `pdh_sample` comes from the
+    /// engine's shared PDH query, which is collected once per interval for every
+    /// subsystem together.
     ///
     /// The first call establishes a baseline and returns a sample whose
     /// utilization fields are `None`: a cumulative counter cannot yield a rate
     /// without a predecessor, and reporting the process-lifetime average as
     /// "current" would be wrong.
-    pub fn sample(&mut self, interval_ms: f64) -> CpuSample {
-        // PDH must be collected once per interval regardless of what else
-        // succeeds, or its own rate window drifts away from ours.
-        let pdh_sample = self.pdh.as_mut().map(|p| p.collect()).unwrap_or_default();
-
+    pub fn sample(&mut self, interval_ms: f64, pdh_sample: PdhCpuSample) -> CpuSample {
         let frequencies = self.frequency.read();
         let current = self.read_processor_counters();
         let system_times = self.read_system_times();

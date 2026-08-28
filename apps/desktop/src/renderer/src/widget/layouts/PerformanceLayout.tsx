@@ -20,6 +20,15 @@ import { useWidgetMetric } from '../metrics.js';
 /** A 30-second window at the default 500 ms interval. */
 const WINDOW_SAMPLES = 60;
 
+/** Metrics whose natural axis is 0-100. */
+const PERCENT_METRICS = new Set<WidgetMetricId>([
+  'cpuUtilization',
+  'cpuUtility',
+  'cpuBusiest',
+  'memoryPercent',
+  'gpu',
+]);
+
 /** Which stored series backs each metric, when one does. */
 const SERIES_FOR: Partial<Record<WidgetMetricId, SystemSeriesName>> = {
   cpuUtilization: 'cpuTimeUtilization',
@@ -27,6 +36,11 @@ const SERIES_FOR: Partial<Record<WidgetMetricId, SystemSeriesName>> = {
   cpuBusiest: 'cpuBusiest',
   memoryPercent: 'memoryPercent',
   memoryUsed: 'memoryUsedBytes',
+  gpu: 'gpuUtilisation',
+  diskRead: 'diskReadBytes',
+  diskWrite: 'diskWriteBytes',
+  networkDown: 'networkDownBytes',
+  networkUp: 'networkUpBytes',
 };
 
 export function PerformanceLayout({
@@ -65,7 +79,15 @@ const PerformanceRow = memo(function PerformanceRow({ id }: { id: WidgetMetricId
           height={30}
           gridLines={0}
           windowSamples={WINDOW_SAMPLES}
-          max={id === 'memoryUsed' ? (totalMemoryBytes ?? undefined) : 100}
+          max={
+            id === 'memoryUsed'
+              ? (totalMemoryBytes ?? undefined)
+              : // Percentages get a fixed 0-100 axis; byte rates have no
+                // ceiling, so their chart scales to what has been seen.
+                PERCENT_METRICS.has(id)
+                ? 100
+                : undefined
+          }
           series={[
             {
               buffer: telemetryStore.system.get(seriesName),

@@ -9,6 +9,10 @@ export type PageId =
   | 'applications'
   | 'cpu'
   | 'memory'
+  | 'gpu'
+  | 'disk'
+  | 'network'
+  | 'history'
   | 'widget'
   | 'debug';
 
@@ -24,6 +28,10 @@ const ITEMS: NavItem[] = [
   { id: 'applications', label: 'Applications', accent: 'var(--color-text-secondary)' },
   { id: 'cpu', label: 'CPU', accent: 'var(--color-cpu)' },
   { id: 'memory', label: 'Memory', accent: 'var(--color-memory)' },
+  { id: 'gpu', label: 'GPU', accent: 'var(--color-gpu)' },
+  { id: 'disk', label: 'Disk', accent: 'var(--color-disk)' },
+  { id: 'network', label: 'Network', accent: 'var(--color-network)' },
+  { id: 'history', label: 'History', accent: 'var(--color-accent)' },
   { id: 'widget', label: 'Widget', accent: 'var(--color-disk)' },
   { id: 'debug', label: 'Debug telemetry', accent: 'var(--color-warn)' },
 ];
@@ -102,6 +110,12 @@ const NavValue = memo(function NavValue({ id }: { id: PageId }) {
         return snapshot.cpu.aggregateTimeUtilizationPercent ?? null;
       case 'memory':
         return snapshot.memory.physicalUtilizationPercent;
+      case 'gpu': {
+        const values = snapshot.gpu.adapters
+          .map((adapter) => adapter.utilisationPercent)
+          .filter((value): value is number => value !== undefined);
+        return values.length > 0 ? Math.max(...values) : null;
+      }
       case 'processes':
         // From the system-wide counter, which is present whether or not this
         // window is subscribed to the full process list.
