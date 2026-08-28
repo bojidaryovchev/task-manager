@@ -122,6 +122,11 @@ fn read_u64(buffer: &[u8], offset: usize) -> Option<u64> {
     Some(u64::from_le_bytes(array))
 }
 
+/// A core as read from the buffer, before flat indices have been assigned:
+/// its efficiency class, whether it is SMT, and the (group, number) address of
+/// each logical processor on it.
+type RawCore = (u8, bool, Vec<(u16, u8)>);
+
 /// Raw `GetLogicalProcessorInformationEx(RelationAll)` buffer.
 fn logical_processor_information() -> Option<Vec<u8>> {
     let mut length: u32 = 0;
@@ -137,11 +142,7 @@ fn logical_processor_information() -> Option<Vec<u8>> {
     let mut buffer = vec![0u8; length as usize];
     // SAFETY: `buffer` holds `length` bytes and we pass exactly that length.
     let ok = unsafe {
-        GetLogicalProcessorInformationEx(
-            RelationAll,
-            buffer.as_mut_ptr() as *mut _,
-            &mut length,
-        )
+        GetLogicalProcessorInformationEx(RelationAll, buffer.as_mut_ptr() as *mut _, &mut length)
     };
     if ok == 0 {
         return None;
@@ -158,7 +159,7 @@ pub fn parse_topology(buffer: &[u8]) -> Topology {
     let mut package_count = 0usize;
     let mut processors_per_group: Vec<usize> = Vec::new();
     // (efficiency_class, is_smt, [(group, number_in_group)])
-    let mut raw_cores: Vec<(u8, bool, Vec<(u16, u8)>)> = Vec::new();
+    let mut raw_cores: Vec<RawCore> = Vec::new();
 
     let mut offset = 0usize;
     while offset + 8 <= buffer.len() {
@@ -326,7 +327,10 @@ mod tests {
 
     /// Build a synthetic RelationAll buffer: one package, one group with
     /// `logical` processors, and `cores` core records.
-    fn synthetic(cores: &[(u8, bool, &[(u16, u8)])], group_sizes: &[u8]) -> Vec<u8> {
+    /// Borrowed form of [`RawCore`], for building synthetic buffers in tests.
+    type CoreSpec<'a> = (u8, bool, &'a [(u16, u8)]);
+
+    fn synthetic(cores: &[CoreSpec<'_>], group_sizes: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
 
         // Package record (PROCESSOR_RELATIONSHIP with no group masks used).
@@ -336,8 +340,8 @@ mod tests {
         out.extend_from_slice(&package);
 
         // Group record.
-        let group_size = GROUP_RELATIONSHIP_GROUP_INFO_OFFSET
-            + group_sizes.len() * PROCESSOR_GROUP_INFO_SIZE;
+        let group_size =
+            GROUP_RELATIONSHIP_GROUP_INFO_OFFSET + group_sizes.len() * PROCESSOR_GROUP_INFO_SIZE;
         let mut group = vec![0u8; group_size];
         group[0..4].copy_from_slice(&RELATION_GROUP.to_le_bytes());
         group[4..8].copy_from_slice(&(group_size as u32).to_le_bytes());
@@ -384,10 +388,7 @@ mod tests {
     fn parses_a_simple_smt_topology() {
         // 2 cores, each with 2 logical processors, single group of 4.
         let buffer = synthetic(
-            &[
-                (0, true, &[(0, 0), (0, 1)]),
-                (0, true, &[(0, 2), (0, 3)]),
-            ],
+            &[(0, true, &[(0, 0), (0, 1)]), (0, true, &[(0, 2), (0, 3)])],
             &[4],
         );
         let topology = parse_topology(&buffer);

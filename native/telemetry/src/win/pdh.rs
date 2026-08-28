@@ -106,9 +106,8 @@ impl PdhCpuQuery {
         let wide_path = wide(path);
         // SAFETY: `wide_path` is a NUL-terminated UTF-16 buffer that outlives
         // the call; PDH copies the path.
-        let status = unsafe {
-            PdhAddEnglishCounterW(self.query, wide_path.as_ptr(), 0, &mut handle)
-        };
+        let status =
+            unsafe { PdhAddEnglishCounterW(self.query, wide_path.as_ptr(), 0, &mut handle) };
         if status != ERROR_SUCCESS_U32 || handle.is_null() {
             return None;
         }

@@ -52,6 +52,19 @@ export interface ProcessSnapshot {
   /** Owner as `DOMAIN\User`. */
   userName?: string;
   isProtected?: boolean;
+  /**
+   * `ProductName` from the image version resource, e.g. "Google Chrome".
+   * The primary signal for grouping processes into applications.
+   */
+  productName?: string;
+  /** `CompanyName` from the image version resource, e.g. "Google LLC". */
+  companyName?: string;
+  /** `FileDescription` from the image version resource - Explorer's friendly name. */
+  fileDescription?: string;
+  /** Windows package full name. Present only for packaged (MSIX/UWP) applications. */
+  packageFullName?: string;
+  /** Application User Model ID. Present only for packaged applications. */
+  applicationUserModelId?: string;
   basePriority: number;
 
   /** Cumulative kernel-mode CPU time since process start, 100ns units. */

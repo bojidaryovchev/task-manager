@@ -67,7 +67,10 @@ mod tests {
     #[test]
     fn filetime_epoch_conversion_matches_known_value() {
         // 1970-01-01T00:00:00Z expressed as FILETIME is exactly the delta.
-        assert_eq!(filetime_100ns_to_unix_ms(FILETIME_UNIX_EPOCH_DELTA_100NS), 0.0);
+        assert_eq!(
+            filetime_100ns_to_unix_ms(FILETIME_UNIX_EPOCH_DELTA_100NS),
+            0.0
+        );
         // 2000-01-01T00:00:00Z = 946684800000 ms since epoch.
         let ft = FILETIME_UNIX_EPOCH_DELTA_100NS + 946_684_800_000 * 10_000;
         assert_eq!(filetime_100ns_to_unix_ms(ft), 946_684_800_000.0);

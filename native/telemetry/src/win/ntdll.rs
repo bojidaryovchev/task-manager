@@ -171,7 +171,11 @@ struct NtDll {
 // SAFETY: the resolved pointers point into ntdll.dll, which is mapped for the
 // lifetime of the process and never unloaded, so sharing them across threads is
 // sound.
+// SAFETY: see the comment above - the pointers are into a permanently mapped
+// module and are only ever read.
 unsafe impl Send for NtDll {}
+// SAFETY: as above. `NtDll` is immutable once initialised, so concurrent shared
+// access cannot observe a torn or dangling pointer.
 unsafe impl Sync for NtDll {}
 
 static NTDLL: OnceLock<NtDll> = OnceLock::new();
@@ -189,12 +193,27 @@ fn ntdll() -> &'static NtDll {
                     query_process: None,
                 };
             }
-            let query = GetProcAddress(module, c"NtQuerySystemInformation".as_ptr() as PCSTR)
-                .map(|f| std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQuerySystemInformationFn>(f));
+            let query =
+                GetProcAddress(module, c"NtQuerySystemInformation".as_ptr() as PCSTR).map(|f| {
+                    std::mem::transmute::<
+                        unsafe extern "system" fn() -> isize,
+                        NtQuerySystemInformationFn,
+                    >(f)
+                });
             let query_ex = GetProcAddress(module, c"NtQuerySystemInformationEx".as_ptr() as PCSTR)
-                .map(|f| std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQuerySystemInformationExFn>(f));
-            let query_process = GetProcAddress(module, c"NtQueryInformationProcess".as_ptr() as PCSTR)
-                .map(|f| std::mem::transmute::<unsafe extern "system" fn() -> isize, NtQueryInformationProcessFn>(f));
+                .map(|f| {
+                    std::mem::transmute::<
+                        unsafe extern "system" fn() -> isize,
+                        NtQuerySystemInformationExFn,
+                    >(f)
+                });
+            let query_process =
+                GetProcAddress(module, c"NtQueryInformationProcess".as_ptr() as PCSTR).map(|f| {
+                    std::mem::transmute::<
+                        unsafe extern "system" fn() -> isize,
+                        NtQueryInformationProcessFn,
+                    >(f)
+                });
             NtDll {
                 query,
                 query_ex,
@@ -347,7 +366,11 @@ pub fn query_memory_list() -> Result<SystemMemoryListInformation, NTSTATUS> {
 /// half the total cost of the call. Reusing the buffer keeps the capacity from
 /// the previous sample, so the steady state is a single walk into an allocation
 /// that is already the right size.
-pub fn query_into(class: i32, buffer: &mut Vec<u8>, minimum_capacity: usize) -> Result<(), NTSTATUS> {
+pub fn query_into(
+    class: i32,
+    buffer: &mut Vec<u8>,
+    minimum_capacity: usize,
+) -> Result<(), NTSTATUS> {
     let Some(func) = ntdll().query else {
         return Err(STATUS_NOT_IMPLEMENTED);
     };

@@ -28,7 +28,7 @@
 pub mod frequency;
 
 use crate::win::ntdll::{self, SystemProcessorPerformanceInformation};
-use crate::win::pdh::{PdhCpuQuery, PdhCpuSample};
+use crate::win::pdh::PdhCpuQuery;
 use crate::win::topology::{read_topology, Topology};
 
 use windows_sys::Win32::Foundation::FILETIME;
@@ -209,11 +209,7 @@ impl CpuCollector {
     pub fn sample(&mut self, interval_ms: f64) -> CpuSample {
         // PDH must be collected once per interval regardless of what else
         // succeeds, or its own rate window drifts away from ours.
-        let pdh_sample = self
-            .pdh
-            .as_mut()
-            .map(|p| p.collect())
-            .unwrap_or(PdhCpuSample::default());
+        let pdh_sample = self.pdh.as_mut().map(|p| p.collect()).unwrap_or_default();
 
         let frequencies = self.frequency.read();
         let current = self.read_processor_counters();
@@ -328,7 +324,10 @@ impl CpuCollector {
                     .get(index)
                     .and_then(|f| f.current_mhz)
                     .map(f64::from),
-                max_frequency_mhz: frequencies.get(index).and_then(|f| f.max_mhz).map(f64::from),
+                max_frequency_mhz: frequencies
+                    .get(index)
+                    .and_then(|f| f.max_mhz)
+                    .map(f64::from),
             });
 
             sum_busy += busy;
@@ -409,11 +408,7 @@ pub mod calc {
     ///
     /// `kernel` includes `idle`, which is why busy is `kernel + user - idle`
     /// and not `kernel + user`.
-    pub fn utilization_percent(
-        idle_delta: f64,
-        kernel_delta: f64,
-        user_delta: f64,
-    ) -> Option<f64> {
+    pub fn utilization_percent(idle_delta: f64, kernel_delta: f64, user_delta: f64) -> Option<f64> {
         if idle_delta < 0.0 || kernel_delta < 0.0 || user_delta < 0.0 {
             return None;
         }

@@ -144,6 +144,7 @@ function navigateExpression(pageId) {
   const labels = {
     overview: 'Overview',
     processes: 'Processes',
+    applications: 'Applications',
     cpu: 'CPU',
     memory: 'Memory',
     debug: 'Debug telemetry',

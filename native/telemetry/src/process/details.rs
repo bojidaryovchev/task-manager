@@ -21,6 +21,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
+use super::metadata::{image_metadata, package_identity, ImageMetadata, PackageIdentity};
 use super::ProcessKey;
 
 use windows_sys::Win32::Foundation::{
@@ -69,6 +70,11 @@ pub struct ProcessDetails {
     pub architecture: Option<&'static str>,
     pub is_wow64: Option<bool>,
     pub is_protected: Option<bool>,
+    /// Version-resource metadata for the image, used to group processes into
+    /// applications.
+    pub image_metadata: ImageMetadata,
+    /// Windows package identity, for packaged (MSIX/UWP) applications.
+    pub package: PackageIdentity,
     /// `None` on success, otherwise a stable reason code for the UI.
     pub failure: Option<&'static str>,
 }
@@ -98,11 +104,6 @@ impl DetailCache {
     /// Reset the per-tick resolution budget. Call once per sample.
     pub fn begin_tick(&mut self) {
         self.budget_used = 0;
-    }
-
-    /// Resolutions performed during the current tick.
-    pub fn budget_used(&self) -> usize {
-        self.budget_used
     }
 
     /// Details for a process, resolving them if this tick still has budget.
@@ -197,8 +198,16 @@ fn resolve(pid: u32, want_command_line: bool) -> ProcessDetails {
     };
 
     let (architecture, is_wow64) = read_architecture(handle.raw());
+    let image_path = read_image_path(handle.raw());
     ProcessDetails {
-        image_path: read_image_path(handle.raw()),
+        // Reading the version resource touches the file system, so it is cached
+        // by path: a hundred processes from one executable read it once.
+        image_metadata: image_path
+            .as_deref()
+            .map(image_metadata)
+            .unwrap_or_default(),
+        package: package_identity(handle.raw()),
+        image_path,
         command_line: want_command_line
             .then(|| read_command_line(handle.raw()))
             .flatten(),

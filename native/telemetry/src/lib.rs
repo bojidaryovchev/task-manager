@@ -37,8 +37,7 @@ use crate::sampling::engine::{run_loop, EngineState, DEFAULT_INTERVAL_MS};
 ///
 /// `CalleeHandled = false`: the JS function receives the snapshot directly
 /// rather than a Node-style `(error, value)` pair.
-type SnapshotCallback =
-    ThreadsafeFunction<JsSystemSnapshot, (), JsSystemSnapshot, Status, false>;
+type SnapshotCallback = ThreadsafeFunction<JsSystemSnapshot, (), JsSystemSnapshot, Status, false>;
 
 /// The telemetry engine. One instance per application; owns the sampling thread.
 #[napi]

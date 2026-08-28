@@ -64,8 +64,8 @@ impl SharedConfig {
     }
 
     pub fn apply(&self, config: &JsCollectorConfig) {
-        let interval = (config.interval_ms.round().max(0.0) as u32)
-            .clamp(MIN_INTERVAL_MS, MAX_INTERVAL_MS);
+        let interval =
+            (config.interval_ms.round().max(0.0) as u32).clamp(MIN_INTERVAL_MS, MAX_INTERVAL_MS);
         self.interval_ms.store(interval, Ordering::Relaxed);
         self.collect_processes
             .store(config.collect_processes, Ordering::Relaxed);
@@ -142,7 +142,9 @@ impl Collectors {
     pub fn collect(&mut self, state: &EngineState) -> JsSystemSnapshot {
         let started = Instant::now();
         let monotonic_ms = self.clock.elapsed_ms();
-        let interval_ms = self.last_monotonic_ms.map(|previous| monotonic_ms - previous);
+        let interval_ms = self
+            .last_monotonic_ms
+            .map(|previous| monotonic_ms - previous);
         self.last_monotonic_ms = Some(monotonic_ms);
 
         let include_debug = state.config.collect_debug.load(Ordering::Relaxed);
@@ -168,8 +170,8 @@ impl Collectors {
         // The first sample has no predecessor; give the CPU collector the
         // configured interval so its debug view has a sane denominator, but its
         // utilization fields stay empty regardless.
-        let cpu_interval_ms =
-            interval_ms.unwrap_or_else(|| f64::from(state.config.interval_ms.load(Ordering::Relaxed)));
+        let cpu_interval_ms = interval_ms
+            .unwrap_or_else(|| f64::from(state.config.interval_ms.load(Ordering::Relaxed)));
         let cpu_sample = self.cpu.sample(cpu_interval_ms);
         let cpu_duration_ms = cpu_started.elapsed().as_secs_f64() * 1000.0;
         if let Some(reason) = cpu_sample.debug.discard_reason {
@@ -238,9 +240,15 @@ impl Collectors {
                 // the totals shown always describe the same list the Processes
                 // page shows. GetPerformanceInfo is only refreshed every couple
                 // of seconds and is used when process collection is disabled.
-                process_count: process_counts.map(|c| c.0).or(counts.map(|c| c.process_count)),
-                thread_count: process_counts.map(|c| c.1).or(counts.map(|c| c.thread_count)),
-                handle_count: process_counts.map(|c| c.2).or(counts.map(|c| c.handle_count)),
+                process_count: process_counts
+                    .map(|c| c.0)
+                    .or(counts.map(|c| c.process_count)),
+                thread_count: process_counts
+                    .map(|c| c.1)
+                    .or(counts.map(|c| c.thread_count)),
+                handle_count: process_counts
+                    .map(|c| c.2)
+                    .or(counts.map(|c| c.handle_count)),
                 uptime_ms: Some(uptime_ms),
             },
         );

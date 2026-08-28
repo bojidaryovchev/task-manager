@@ -151,6 +151,8 @@ impl MemorySample {
 }
 
 fn read_global_memory_status() -> Option<GlobalMemoryStatus> {
+    // SAFETY: MEMORYSTATUSEX is plain data with no invalid bit patterns; the
+    // API requires dwLength to be set before the call, which happens next.
     let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
     status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
     // SAFETY: dwLength is set to the true size of the structure, as required.
@@ -170,6 +172,8 @@ fn read_global_memory_status() -> Option<GlobalMemoryStatus> {
 }
 
 fn read_performance_counts() -> Option<PerformanceCounts> {
+    // SAFETY: PERFORMANCE_INFORMATION is plain data with no invalid bit
+    // patterns, and every field is overwritten by a successful call.
     let mut info: PERFORMANCE_INFORMATION = unsafe { std::mem::zeroed() };
     let size = std::mem::size_of::<PERFORMANCE_INFORMATION>() as u32;
     // SAFETY: `cb` is the true size of the structure we pass.

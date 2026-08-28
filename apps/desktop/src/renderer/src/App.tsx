@@ -6,6 +6,7 @@ import { OverviewPage } from './pages/Overview.js';
 import { CpuPage } from './pages/Cpu.js';
 import { MemoryPage } from './pages/Memory.js';
 import { ProcessesPage } from './pages/Processes.js';
+import { ApplicationsPage } from './pages/Applications.js';
 import { DebugPage } from './pages/Debug.js';
 
 export function App(): React.JSX.Element {
@@ -61,6 +62,7 @@ export function App(): React.JSX.Element {
         {page === 'cpu' && <CpuPage />}
         {page === 'memory' && <MemoryPage />}
         {page === 'processes' && <ProcessesPage />}
+        {page === 'applications' && <ApplicationsPage />}
         {page === 'debug' && <DebugPage />}
       </main>
     </div>

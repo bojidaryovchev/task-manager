@@ -22,6 +22,7 @@
 //! up as an enormous spike.
 
 mod details;
+mod metadata;
 
 use std::collections::HashMap;
 
@@ -30,6 +31,7 @@ use crate::cpu::calc;
 use crate::win::ntdll::{self, ProcessListIter};
 
 pub use details::ProcessDetails;
+pub use metadata::{ImageMetadata, PackageIdentity};
 
 /// Stable identity for a process across samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -90,6 +92,13 @@ pub struct ProcessSample {
     pub architecture: Option<&'static str>,
     pub is_wow64: Option<bool>,
     pub is_protected: Option<bool>,
+    /// Version-resource metadata, used for application grouping.
+    pub product_name: Option<String>,
+    pub company_name: Option<String>,
+    pub file_description: Option<String>,
+    /// Windows package identity, for packaged applications.
+    pub package_full_name: Option<String>,
+    pub application_user_model_id: Option<String>,
     /// Why a handle-derived field is missing, when it is.
     pub detail_failure: Option<&'static str>,
 }
@@ -147,7 +156,11 @@ impl ProcessCollector {
 
     /// Collect every process. `interval_ms` is the measured monotonic interval
     /// since the previous collection; pass `None` on the first sample.
-    pub fn sample(&mut self, interval_ms: Option<f64>, collect_command_lines: bool) -> ProcessesSample {
+    pub fn sample(
+        &mut self,
+        interval_ms: Option<f64>,
+        collect_command_lines: bool,
+    ) -> ProcessesSample {
         let started = std::time::Instant::now();
         self.sequence += 1;
 
@@ -177,8 +190,8 @@ impl ProcessCollector {
             };
             // SAFETY: the UNICODE_STRING buffer points inside `buffer`, which is
             // alive for this whole loop.
-            let name = unsafe { ntdll::unicode_string_to_string(&info.image_name) }
-                .unwrap_or_else(|| {
+            let name =
+                unsafe { ntdll::unicode_string_to_string(&info.image_name) }.unwrap_or_else(|| {
                     if pid == 0 {
                         "System Idle Process".to_string()
                     } else {
@@ -227,6 +240,11 @@ impl ProcessCollector {
                 architecture: None,
                 is_wow64: None,
                 is_protected: None,
+                product_name: None,
+                company_name: None,
+                file_description: None,
+                package_full_name: None,
+                application_user_model_id: None,
                 detail_failure: None,
             });
         }
@@ -253,7 +271,9 @@ impl ProcessCollector {
             }
 
             // Rates, only when we have a predecessor for this exact identity.
-            let cpu_time = sample.kernel_time_100ns.saturating_add(sample.user_time_100ns);
+            let cpu_time = sample
+                .kernel_time_100ns
+                .saturating_add(sample.user_time_100ns);
             if let (Some(previous), Some(interval_ms)) =
                 (self.previous.get(&sample.key), interval_ms)
             {
@@ -265,21 +285,23 @@ impl ProcessCollector {
                         self.logical_processor_count,
                     ) {
                         sample.cpu_machine_percent = Some(machine);
-                        sample.cpu_core_equivalent_percent = Some(
-                            calc::process_core_equivalent_percent(
+                        sample.cpu_core_equivalent_percent =
+                            Some(calc::process_core_equivalent_percent(
                                 machine,
                                 self.logical_processor_count,
-                            ),
-                        );
+                            ));
                     }
                 }
                 if interval_ms > 0.0 {
                     let seconds = interval_ms / 1000.0;
                     sample.io_read_bytes_per_second = Some(
-                        sample.io_read_bytes.saturating_sub(previous.io_read_bytes) as f64 / seconds,
+                        sample.io_read_bytes.saturating_sub(previous.io_read_bytes) as f64
+                            / seconds,
                     );
                     sample.io_write_bytes_per_second = Some(
-                        sample.io_write_bytes.saturating_sub(previous.io_write_bytes) as f64
+                        sample
+                            .io_write_bytes
+                            .saturating_sub(previous.io_write_bytes) as f64
                             / seconds,
                     );
                 }
@@ -305,6 +327,11 @@ impl ProcessCollector {
                 sample.architecture = detail.architecture;
                 sample.is_wow64 = detail.is_wow64;
                 sample.is_protected = detail.is_protected;
+                sample.product_name = detail.image_metadata.product_name.clone();
+                sample.company_name = detail.image_metadata.company_name.clone();
+                sample.file_description = detail.image_metadata.file_description.clone();
+                sample.package_full_name = detail.package.package_full_name.clone();
+                sample.application_user_model_id = detail.package.application_user_model_id.clone();
                 sample.detail_failure = detail.failure;
                 if detail.failure == Some("accessDenied") {
                     access_denied_count += 1;

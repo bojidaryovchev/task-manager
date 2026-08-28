@@ -198,6 +198,16 @@ pub struct JsProcessSnapshot {
     pub architecture: Option<String>,
     pub user_name: Option<String>,
     pub is_protected: Option<bool>,
+    /// `ProductName` from the image version resource, e.g. "Google Chrome".
+    pub product_name: Option<String>,
+    /// `CompanyName` from the image version resource.
+    pub company_name: Option<String>,
+    /// `FileDescription` from the image version resource.
+    pub file_description: Option<String>,
+    /// Windows package full name, present only for packaged applications.
+    pub package_full_name: Option<String>,
+    /// Application User Model ID, present only for packaged applications.
+    pub application_user_model_id: Option<String>,
     pub base_priority: i32,
 
     #[napi(js_name = "kernelTime100ns")]
@@ -368,9 +378,7 @@ pub fn cpu_to_js(sample: &CpuSample, context: CpuConversionContext<'_>) -> JsCpu
         processor_performance_percent: sample.processor_performance_percent,
         pdh_processor_time_percent: sample.pdh_processor_time_percent,
         busiest_logical_processor_percent: sample.busiest_logical_processor_percent,
-        busiest_logical_processor_index: sample
-            .busiest_logical_processor_index
-            .map(|i| i as u32),
+        busiest_logical_processor_index: sample.busiest_logical_processor_index.map(|i| i as u32),
         average_logical_processor_percent: sample.average_logical_processor_percent,
         aggregate_dpc_percent: sample.aggregate_dpc_percent,
         aggregate_interrupt_percent: sample.aggregate_interrupt_percent,
@@ -392,12 +400,15 @@ pub fn cpu_to_js(sample: &CpuSample, context: CpuConversionContext<'_>) -> JsCpu
             user_delta100ns: sample.debug.user_delta_100ns,
             total_delta100ns: sample.debug.total_delta_100ns,
             busy_delta100ns: sample.debug.busy_delta_100ns,
-            get_system_times: sample.debug.get_system_times.map(|d| JsGetSystemTimesDelta {
-                idle_delta100ns: d.idle_delta_100ns,
-                kernel_delta100ns: d.kernel_delta_100ns,
-                user_delta100ns: d.user_delta_100ns,
-                utilization_percent: d.utilization_percent,
-            }),
+            get_system_times: sample
+                .debug
+                .get_system_times
+                .map(|d| JsGetSystemTimesDelta {
+                    idle_delta100ns: d.idle_delta_100ns,
+                    kernel_delta100ns: d.kernel_delta_100ns,
+                    user_delta100ns: d.user_delta_100ns,
+                    utilization_percent: d.utilization_percent,
+                }),
             counter_coverage_ratio: sample.debug.counter_coverage_ratio,
             discarded: sample.debug.discarded,
             discard_reason: sample.debug.discard_reason.map(str::to_owned),
@@ -489,6 +500,11 @@ fn process_to_js(sample: &ProcessSample) -> JsProcessSnapshot {
         architecture: sample.architecture.map(str::to_owned),
         user_name: sample.user_name.clone(),
         is_protected: sample.is_protected,
+        product_name: sample.product_name.clone(),
+        company_name: sample.company_name.clone(),
+        file_description: sample.file_description.clone(),
+        package_full_name: sample.package_full_name.clone(),
+        application_user_model_id: sample.application_user_model_id.clone(),
         base_priority: sample.base_priority,
         kernel_time100ns: sample.kernel_time_100ns as f64,
         user_time100ns: sample.user_time_100ns as f64,

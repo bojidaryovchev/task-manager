@@ -2,7 +2,13 @@ import { memo } from 'react';
 import { formatPercent } from '@task-manager/shared';
 import { useHostInfo, useTelemetry } from '../lib/hooks.js';
 
-export type PageId = 'overview' | 'cpu' | 'memory' | 'processes' | 'debug';
+export type PageId =
+  | 'overview'
+  | 'processes'
+  | 'applications'
+  | 'cpu'
+  | 'memory'
+  | 'debug';
 
 interface NavItem {
   id: PageId;
@@ -13,6 +19,7 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { id: 'overview', label: 'Overview', accent: 'var(--color-accent)' },
   { id: 'processes', label: 'Processes', accent: 'var(--color-text-secondary)' },
+  { id: 'applications', label: 'Applications', accent: 'var(--color-text-secondary)' },
   { id: 'cpu', label: 'CPU', accent: 'var(--color-cpu)' },
   { id: 'memory', label: 'Memory', accent: 'var(--color-memory)' },
   { id: 'debug', label: 'Debug telemetry', accent: 'var(--color-warn)' },

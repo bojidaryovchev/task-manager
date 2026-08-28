@@ -84,6 +84,7 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `node tools/validate.mjs [seconds]` | Compare every metric against Windows' own performance counters over the same window |
 | `node tools/measure-load.mjs [threads] [seconds]` | Run a controlled CPU workload and check per-process CPU normalisation against arithmetic expectation |
 | `node tools/devtools.mjs shot <file.png> [page]` | Drive the running app over the DevTools protocol (needs `--remote-debugging-port`) |
+| `node tools/fixtures/cpu-load.mjs [threads] [seconds]` | A controlled CPU workload, on its own |
 
 ---
 
@@ -188,7 +189,13 @@ non-paged pool, page file size and usage, page size.
 user, architecture, session, protection, base priority, CPU (as machine share and
 as core equivalent), private working set, working set, private commit, peak
 working set, pools, virtual size, page and hard faults, threads, handles,
-cumulative and per-second I/O.
+cumulative and per-second I/O. Flat and tree views, with subtree totals for the
+metrics that are actually additive.
+
+**Applications** — processes grouped into applications using only signals Windows
+provides: package identity first, then the publisher and product declared in the
+executable's version resource, then the executable path. Every group states which
+signal formed it and expands to the raw processes underneath.
 
 **Self-measurement** — per-subsystem collection cost, duty cycle, dropped
 snapshots, tracked identity count.
@@ -235,6 +242,10 @@ error of −2.01% attributable to scheduler contention on an already-busy machin
 - **Per-processor frequency covers one processor group.** The API reports only
   the calling thread's group; the rest is reported as unavailable rather than
   filled in with group 0's values.
+- **Application grouping is only as good as its inputs.** Processes we cannot
+  open have no path or version resource, so they group by image name alone —
+  which is why all inaccessible `svchost.exe` instances land in one row. The
+  grouping basis is shown on every row so this is visible rather than implied.
 - **Not yet collected:** GPU, VRAM, disk throughput, network throughput,
   per-process disk and network attribution, file-level I/O attribution,
   persistent history, tray, desktop widget.

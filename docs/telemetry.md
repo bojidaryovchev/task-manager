@@ -459,6 +459,55 @@ and pipe I/O alike. A process reading from a network socket increases
 `ioReadBytes`. Real disk attribution needs ETW and is a later milestone; until
 then these columns are labelled "I/O", not "Disk".
 
+### Process trees
+
+`parentKey` links a child to a parent only when a live process with that PID
+exists *and* was created no later than the child, and PID 0 is never treated as a
+parent. A link is therefore absent rather than wrong when the parent has exited
+or its PID has been recycled; such processes appear as roots.
+
+Subtree totals sum only metrics that are actually additive:
+
+| Field | Additive | Why |
+|---|---|---|
+| `cpuMachinePercent` | yes | Shares of one common denominator, total machine capacity |
+| `privateWorkingSetBytes` | yes | Private by definition, so no page is counted twice |
+| `privateCommitBytes` | yes | Also private |
+| `threadCount`, `handleCount` | yes | Counts of distinct objects |
+| I/O rates | yes | Independent byte streams |
+| `workingSetBytes` | **no** | Includes shared pages; summing double-counts them |
+| `peakWorkingSetBytes` | **no** | A historical maximum, not a quantity |
+| `virtualSizeBytes` | **no** | Reserved address space, meaningless summed |
+
+A subtree with no CPU measurement anywhere reports no CPU value rather than 0%.
+
+### Application grouping
+
+Grouping uses only signals Windows provides, in this order:
+
+1. **Package identity** — `GetPackageFullName`. Windows assigns it, so two
+   processes sharing it are the same application by definition. The version
+   component is excluded from the key so an in-place update does not split a
+   group in two.
+2. **Publisher and product** — `CompanyName` and `ProductName` from the image
+   version resource, read with `GetFileVersionInfoW` / `VerQueryValueW` using the
+   image's own language/codepage rather than assuming US English. This is what
+   places many `chrome.exe` processes under "Google Chrome".
+3. **Executable path** — for images with no version resource. Grouping by bare
+   file name would merge unrelated programs, so it is not done.
+4. **Image name** — only when the path could not be read, which happens for
+   processes we lack rights to open.
+
+Windows' generic hosts (`svchost.exe`, `rundll32.exe`, `dllhost.exe`,
+`taskhostw.exe`, `backgroundtaskhost.exe`, `runtimebroker.exe`, `conhost.exe`,
+`wmiprvse.exe`) are excluded from rule 2, because they all declare the same
+Windows product name and grouping on it would collapse dozens of unrelated
+services into one meaningless row. They fall through to path-based grouping.
+
+There is no built-in database of application names, and every group records the
+signal that formed it so the UI can explain the grouping. Member processes are
+always inspectable.
+
 ### Handle-derived details
 
 Image path, command line, owning user, architecture and protection status require

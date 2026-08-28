@@ -13,7 +13,7 @@ use windows_sys::Win32::Security::{
     GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY,
 };
 use windows_sys::Win32::System::SystemInformation::{
-    GetComputerNameExW, GetTickCount64, GetSystemInfo, SYSTEM_INFO,
+    GetComputerNameExW, GetSystemInfo, GetTickCount64, SYSTEM_INFO,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -39,13 +39,8 @@ fn computer_name() -> String {
     }
     let mut buffer = vec![0u16; size as usize];
     // SAFETY: buffer holds `size` characters, which is what the API asked for.
-    let ok = unsafe {
-        GetComputerNameExW(
-            COMPUTER_NAME_DNS_HOSTNAME,
-            buffer.as_mut_ptr(),
-            &mut size,
-        )
-    };
+    let ok =
+        unsafe { GetComputerNameExW(COMPUTER_NAME_DNS_HOSTNAME, buffer.as_mut_ptr(), &mut size) };
     if ok == 0 {
         return String::new();
     }
@@ -54,6 +49,8 @@ fn computer_name() -> String {
 }
 
 fn native_architecture() -> String {
+    // SAFETY: SYSTEM_INFO is plain data with no invalid bit patterns, and
+    // GetSystemInfo overwrites every field before we read any of them.
     let mut info: SYSTEM_INFO = unsafe { std::mem::zeroed() };
     // SAFETY: single out-parameter; GetSystemInfo cannot fail.
     unsafe { GetSystemInfo(&mut info) };
@@ -74,9 +71,7 @@ fn is_elevated() -> bool {
     if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
         return false;
     }
-    let mut elevation = TOKEN_ELEVATION {
-        TokenIsElevated: 0,
-    };
+    let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
     let mut size = std::mem::size_of::<TOKEN_ELEVATION>() as u32;
     // SAFETY: output buffer matches the size we pass.
     let ok = unsafe {
