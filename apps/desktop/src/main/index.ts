@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import type { CollectorConfig } from '@task-manager/telemetry-types';
@@ -16,6 +17,19 @@ const directory = __dirname;
 let telemetry: TelemetryService | null = null;
 let mainWindow: BrowserWindow | null = null;
 
+/**
+ * Window icon for development runs.
+ *
+ * A packaged build takes its window and taskbar icon from the executable's own
+ * resources, so this is only needed when running from source, where the host is
+ * the generic Electron binary.
+ */
+function developmentIcon(): string | undefined {
+  if (app.isPackaged) return undefined;
+  const candidate = join(directory, '../../build/icon.png');
+  return existsSync(candidate) ? candidate : undefined;
+}
+
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1280,
@@ -25,6 +39,7 @@ function createMainWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#0b0d10',
     title: 'Task Manager',
+    icon: developmentIcon(),
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(directory, '../preload/index.js'),

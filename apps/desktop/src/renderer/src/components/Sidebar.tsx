@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { formatPercent } from '@task-manager/shared';
 import { useHostInfo, useTelemetry } from '../lib/hooks.js';
+import logoUrl from '../assets/logo.png';
 
 export type PageId =
   | 'overview'
@@ -36,10 +37,20 @@ export function Sidebar({
 
   return (
     <nav className="flex w-56 shrink-0 flex-col border-r border-border-subtle bg-surface-1">
-      <div className="border-b border-border-subtle px-4 py-3">
-        <div className="text-sm font-semibold tracking-tight">Task Manager</div>
-        <div className="truncate text-[11px] text-text-muted" title={hostInfo?.computerName}>
-          {hostInfo?.computerName ?? '—'}
+      <div className="flex items-center gap-2.5 border-b border-border-subtle px-4 py-3">
+        <img
+          src={logoUrl}
+          alt=""
+          width={26}
+          height={26}
+          className="shrink-0"
+          draggable={false}
+        />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold tracking-tight">Task Manager</div>
+          <div className="truncate text-[11px] text-text-muted" title={hostInfo?.computerName}>
+            {hostInfo?.computerName ?? '—'}
+          </div>
         </div>
       </div>
 

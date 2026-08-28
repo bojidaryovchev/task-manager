@@ -85,6 +85,7 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `node tools/measure-load.mjs [threads] [seconds]` | Run a controlled CPU workload and check per-process CPU normalisation against arithmetic expectation |
 | `node tools/devtools.mjs shot <file.png> [page]` | Drive the running app over the DevTools protocol (needs `--remote-debugging-port`) |
 | `node tools/fixtures/cpu-load.mjs [threads] [seconds]` | A controlled CPU workload, on its own |
+| `python tools/generate-icons.py` | Regenerate the application icons from `logo.png` (needs Pillow) |
 
 ---
 
@@ -112,8 +113,15 @@ task-manager/
 ├── docs/
 │   ├── telemetry.md         Every metric: definition, source, calculation, limits
 │   └── architecture.md      How the pieces fit together and why
-└── tools/                   Validation and development utilities
+├── tools/                   Validation and development utilities
+└── logo.png                 Source artwork for the application icons
 ```
+
+Icons are generated from `logo.png` into `apps/desktop/build/` (a 512px PNG and a
+multi-resolution ICO) and into the renderer's assets. The source art has a wide
+transparent border, so the generator crops to the artwork and re-pads it — an
+icon that does not fill its frame looks undersized next to everything else in the
+taskbar.
 
 ---
 

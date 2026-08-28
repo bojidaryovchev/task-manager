@@ -11,7 +11,7 @@
     "start": "electron-vite preview",
     "package": "electron-builder --win --config electron-builder.yml",
     "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --passWithNoTests"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

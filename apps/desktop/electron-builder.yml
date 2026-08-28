@@ -26,6 +26,10 @@ extraResources:
     to: native/telemetry.win32-x64-msvc.node
 
 win:
+  # Multi-resolution ICO so Windows never has to rescale one entry for the
+  # taskbar, Alt-Tab, Explorer and the title bar. Regenerate with
+  # `python tools/generate-icons.py`.
+  icon: build/icon.ico
   target:
     # A single self-contained executable. Nothing to install, no runtime
     # prerequisites: Electron, the native module and the UI are all inside it.

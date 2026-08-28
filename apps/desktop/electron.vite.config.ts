@@ -30,6 +30,12 @@ export default defineConfig({
     resolve: { alias },
     plugins: [react(), tailwindcss()],
     build: {
+      // Inline the few small images the UI uses as data: URIs. A packaged build
+      // loads the renderer over file://, where the document's Content-Security-
+      // Policy `img-src 'self'` does not reliably match a sibling asset file;
+      // `data:` is explicitly allowed, so inlining removes the risk and a
+      // request. The threshold is just above the app logo.
+      assetsInlineLimit: 16 * 1024,
       rollupOptions: { input: { index: resolve(__dirname, 'src/renderer/index.html') } },
     },
   },
