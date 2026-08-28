@@ -38,6 +38,8 @@ export const IpcChannel = {
   ShowWidgetMenu: 'widget:showMenu',
   /** main -> renderer push: WidgetSettings */
   WidgetSettingsEvent: 'widget:settings',
+  /** invoke: (width: number) => void - the widget's measured natural width */
+  ReportWidgetContentWidth: 'widget:contentWidth',
 
   /** invoke: (fromUnixMs, toUnixMs) => HistoryResult */
   QueryHistory: 'history:query',
@@ -97,6 +99,16 @@ export interface TaskManagerApi {
   showWidgetMenu(x: number, y: number): Promise<void>;
   /** Subscribe to widget settings changes. Returns an unsubscribe function. */
   onWidgetSettings(listener: (settings: WidgetSettings) => void): () => void;
+  /**
+   * Report the widget's measured natural content width, in CSS pixels.
+   *
+   * Only the minimal layout uses this. Its width depends on the labels and
+   * values it happens to be showing, and no constant can be right for both
+   * "CPU 5%" and "DISK READ 126 KB/s" — one wastes space, the other clips. Main
+   * sizes that layout's window to what the renderer measured; the fixed-width
+   * layouts ignore it.
+   */
+  reportWidgetContentWidth(width: number): Promise<void>;
 
   // --- history -------------------------------------------------------------
   /** Read a window of history. The finest tier covering the span answers it. */

@@ -32,6 +32,7 @@ describe('normaliseWidgetSettings', () => {
       locked: true,
       opacity: 0.5,
       snapToEdges: false,
+      showTemperatures: false,
       bounds: { x: 10, y: 20, width: 200, height: 100 },
     };
     expect(normaliseWidgetSettings(input)).toEqual(input);
@@ -101,10 +102,14 @@ describe('normaliseWidgetSettings', () => {
   it('treats booleans strictly, so a stray string cannot enable click-through', () => {
     expect(normaliseWidgetSettings({ clickThrough: 'yes' }).clickThrough).toBe(false);
     expect(normaliseWidgetSettings({ enabled: 1 }).enabled).toBe(false);
-    // alwaysOnTop and snapToEdges default to true, so only an explicit false turns them off.
+    // alwaysOnTop, snapToEdges and showTemperatures default to true, so only an
+    // explicit false turns them off.
     expect(normaliseWidgetSettings({}).alwaysOnTop).toBe(true);
     expect(normaliseWidgetSettings({ alwaysOnTop: false }).alwaysOnTop).toBe(false);
     expect(normaliseWidgetSettings({ alwaysOnTop: 'no' }).alwaysOnTop).toBe(true);
+    expect(normaliseWidgetSettings({}).showTemperatures).toBe(true);
+    expect(normaliseWidgetSettings({ showTemperatures: false }).showTemperatures).toBe(false);
+    expect(normaliseWidgetSettings({ showTemperatures: 'no' }).showTemperatures).toBe(true);
   });
 
   it('rejects bounds that are incomplete or not numbers', () => {
@@ -166,10 +171,34 @@ describe('widgetLayoutSize', () => {
   it('never returns a size too small to contain its own border', () => {
     for (const layout of ['minimal', 'compact', 'performance', 'topConsumers'] as const) {
       for (const count of [0, 1, 5]) {
-        const size = widgetLayoutSize(layout, count);
-        expect(size.width).toBeGreaterThan(80);
-        expect(size.height).toBeGreaterThan(30);
+        for (const temperatures of [false, true]) {
+          const size = widgetLayoutSize(layout, count, temperatures);
+          expect(size.width).toBeGreaterThan(80);
+          expect(size.height).toBeGreaterThan(30);
+        }
       }
     }
+  });
+
+  it('makes room for the temperature column when it is shown', () => {
+    // The window is sized to its content: too narrow clips the column, too wide
+    // shows as transparent desktop inside the widget's own outline.
+    for (const layout of ['minimal', 'compact', 'performance'] as const) {
+      const without = widgetLayoutSize(layout, 3, false);
+      const with_ = widgetLayoutSize(layout, 3, true);
+      expect(with_.width).toBeGreaterThan(without.width);
+      expect(with_.height).toBe(without.height);
+    }
+  });
+
+  it('gives the width straight back when temperatures are turned off', () => {
+    // Turning the column off must not leave a dead margin behind.
+    expect(widgetLayoutSize('compact', 3, false)).toEqual(widgetLayoutSize('compact', 3));
+  });
+
+  it('does not widen top consumers, which shows processes rather than metrics', () => {
+    expect(widgetLayoutSize('topConsumers', 3, true)).toEqual(
+      widgetLayoutSize('topConsumers', 3, false),
+    );
   });
 });

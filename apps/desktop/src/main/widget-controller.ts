@@ -85,6 +85,19 @@ export class WidgetController {
     this.update({ enabled });
   }
 
+  /**
+   * The widget reporting how wide its content actually is.
+   *
+   * Only the minimal layout needs this. Its width is decided by the labels and
+   * values it happens to be showing, and no constant can serve both "CPU 5%"
+   * and "DISK READ 126 KB/s": one leaves dead space inside the widget's own
+   * outline, the other clips. So that layout is sized from a measurement rather
+   * than an estimate.
+   */
+  reportContentWidth(width: number): void {
+    this.#window.setMeasuredContentWidth(width, this.#settings.widget);
+  }
+
   close(): void {
     this.#window.close();
   }

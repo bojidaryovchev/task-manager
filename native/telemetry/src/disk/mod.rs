@@ -50,6 +50,9 @@ pub struct DiskSample {
     pub queue_length: Option<f64>,
     pub reads_per_second: Option<f64>,
     pub writes_per_second: Option<f64>,
+    /// The drive's own sensor, joined on by `thermal::attach_to_disks`. Absent
+    /// for the synthesised `_Total` instance, which is not a device.
+    pub temperature: Option<crate::thermal::TemperatureReading>,
 }
 
 /// A whole-machine disk sample plus the per-disk breakdown.
@@ -159,6 +162,7 @@ impl DiskCollector {
                 queue_length: queue.get(&name).copied(),
                 reads_per_second: reads.get(&name).copied(),
                 writes_per_second: writes.get(&name).copied(),
+                temperature: None,
                 instance: name.clone(),
             };
             if name == TOTAL_INSTANCE {

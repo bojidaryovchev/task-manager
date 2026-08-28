@@ -63,6 +63,10 @@ pub struct AdapterSample {
     pub shared_memory_used_bytes: Option<f64>,
     /// Total system memory the adapter may share, from DXGI.
     pub shared_memory_total_bytes: Option<u64>,
+    /// Die temperature, when a vendor library could be joined to this adapter.
+    /// Attached by `thermal::attach_to_adapters`; see there for why it is
+    /// sometimes absent on an adapter that does have a sensor.
+    pub temperature: Option<crate::thermal::TemperatureReading>,
 }
 
 /// Per-process GPU usage, keyed by PID.
@@ -203,6 +207,7 @@ impl GpuCollector {
                 shared_memory_used_bytes: shared.get(&luid).copied(),
                 shared_memory_total_bytes: described
                     .map(|adapter| adapter.shared_system_memory_bytes),
+                temperature: None,
                 luid,
             });
         }

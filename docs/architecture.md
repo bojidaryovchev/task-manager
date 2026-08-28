@@ -7,7 +7,7 @@ each metric means, see [`telemetry.md`](telemetry.md).
 
 ```
 COLLECTION      Windows APIs        native/telemetry/src/win/
-CALCULATION     Rust collectors     native/telemetry/src/{cpu,memory,process,disk,network,gpu}/
+CALCULATION     Rust collectors     native/telemetry/src/{cpu,memory,process,disk,network,gpu,thermal}/
 AGGREGATION     Sampling engine     native/telemetry/src/sampling/
 PERSISTENCE     Tiered history      native/telemetry/src/history/
 TRANSPORT       N-API + IPC         native/telemetry/src/api.rs, apps/desktop/src/{main,preload}/
@@ -122,13 +122,69 @@ built from the same template as the widget's own context menu — can always tur
 it off again.
 
 **The window is sized to its content.** Because it is frameless and transparent,
-a window larger than what is drawn shows as dead transparent space inside the
-widget's own outline. `widgetLayoutSize` derives the size from the layout and the
-number of selected metrics.
+a window larger than what is drawn shows as dead space inside the widget's own
+outline, and one smaller clips it. `widgetLayoutSize` derives the size from the
+layout, the number of selected metrics and whether the temperature column is on.
+
+For three of the four layouts that is exact, because they are fixed-width by
+design: their bars and charts need a stable amount of room, and sizing them to
+their text would make the widget breathe every time a value changed width.
+
+The minimal layout is different — its width is whatever its labels and values
+need, and no constant serves both `CPU 5%` and `DISK READ 126 KB/s`. A constant
+tuned to fit the long case wastes 140 pixels on the short one; tuned to the short
+case it clips the long one. So that layout renders at `width: max-content`,
+measures itself with a `ResizeObserver`, and reports the result to main, which
+sizes the window to it. There is no feedback loop precisely because the element
+does not stretch: resizing the window around it cannot change what it measures.
+
+The reported width is clamped in main like any other value crossing the renderer
+boundary. A frameless always-on-top window a few pixels wide cannot be grabbed,
+and one wider than the desktop cannot be moved off it.
+
+## Temperature, and what it is allowed to claim
+
+Three temperature sources are readable without administrator: NVML for NVIDIA
+GPUs, `IOCTL_STORAGE_QUERY_PROPERTY` for drives, and the ACPI thermal zone
+counter set. There is no fourth, and in particular there is no CPU package
+sensor — that needs an MSR read through a kernel-mode driver.
+
+The design problem is not collecting these. It is that they differ enormously in
+how much they can be trusted, and putting three numbers in one column erases
+that difference. So **a reading is a value plus its provenance**, never a bare
+number: the source it came from and the name of the sensor that produced it
+travel with it from Rust all the way to the tooltip.
+
+That single decision settles the rest:
+
+- The GPU and drive readings are joined onto the adapter and the disk they
+  belong to, because their sensors *are* those devices. The join is by PCI
+  vendor/device id and by disk number, both exact. Where the join would be
+  ambiguous — two identical GPUs — no attachment is made at all rather than one
+  made by enumeration order, which nothing documents as meaningful.
+- The ACPI zone is joined to nothing. It is displayed beside CPU, because that
+  is where someone looks for it and because on tested hardware it tracks CPU load
+  within one sample, but it is labelled with its own zone name, marked visually
+  as indirect, and stated in its tooltip not to be a package sensor. It is
+  evidence, and it is presented as evidence.
+- Memory and network get nothing, and "nothing" renders as the same em dash the
+  rest of the application uses for an unmeasured value.
+
+Colour follows the same rule: a reading turns amber only when it is at or above a
+threshold the **vendor** published. NVML supplies throttle and shutdown points;
+most drives report none; ACPI zones expose none through this counter set. A
+sensor that arrived without thresholds is never coloured, because there is
+nothing for it to be above.
+
+The two polled sources carry the age of their measurement rather than hiding it.
+A drive is asked every ten seconds — it has orders of magnitude more thermal mass
+than a die, and each query is an IOCTL to the device — so a reading can be ten
+seconds old, and its tooltip says so.
 
 ## One PDH query, one collection
 
-Disk, network, GPU and the two frequency-aware CPU counters all come from PDH.
+Disk, network, GPU, thermal zones and the two frequency-aware CPU counters all
+come from PDH.
 They share a single query, collected exactly once per interval, because PDH
 derives its rates from the gap between consecutive collections: collecting
 per-subsystem would silently change what every rate meant. A counter set missing
@@ -136,8 +192,8 @@ on a machine simply yields no counter id and its owner reports values as
 unavailable, so a machine with no discrete GPU costs nothing and shows nothing
 rather than zeros.
 
-Measured cost of the whole PDH read, including disk, network and GPU: under 1 ms
-per sample.
+Measured cost of the whole PDH read, including disk, network, GPU and
+temperature: 0.78 ms per sample, of which the thermal collector is 0.06-0.13 ms.
 
 ## History
 
@@ -298,6 +354,5 @@ visible in its own process list like anything else.
 | 8 | Network throughput, per-process network, connections |
 | 9 | Tray, desktop widget, settings, autostart |
 
-The desktop widget is a second `BrowserWindow` in this same application, attached
-to the same `TelemetryService` broadcast. It will not implement any telemetry of
-its own — that is the property the architecture exists to protect.
+Milestones 1-9 are implemented. What remains deliberately uncollected — and why —
+is listed at the end of [`telemetry.md`](telemetry.md#not-collected).

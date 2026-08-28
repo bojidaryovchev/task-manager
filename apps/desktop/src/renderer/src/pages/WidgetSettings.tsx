@@ -153,6 +153,21 @@ export function WidgetSettingsPage(): React.JSX.Element {
             onChange={(value) => update({ snapToEdges: value })}
             hint="Snaps to the nearest screen edge or corner when released."
           />
+          <Toggle
+            label="Show temperatures"
+            checked={settings.showTemperatures}
+            onChange={(value) => update({ showTemperatures: value })}
+            hint="Adds a temperature between each metric's label and its value, and widens the widget to fit it. Metrics with no readable sensor — memory and network — show an em dash."
+          />
+          <Note>
+            Only three temperature sources are readable without administrator rights, and the
+            widget shows those three and nothing else. GPU temperature comes from NVIDIA&rsquo;s
+            own NVML and drive temperature from the device&rsquo;s SMART sensor, so both mean
+            exactly what they say. The reading beside CPU is an ACPI thermal zone: a real live
+            sensor, but what the firmware attached it to is undocumented, so it is marked with a
+            dotted underline and is <em>not</em> labelled a CPU package temperature. Hover any
+            reading to see which sensor produced it.
+          </Note>
         </Panel>
 
         <Panel title="Position">

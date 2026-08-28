@@ -2,6 +2,7 @@ import type { CpuSnapshot } from './cpu.js';
 import type { DisksSnapshot, GpuSnapshot, NetworkSnapshot } from './devices.js';
 import type { MemorySnapshot } from './memory.js';
 import type { ProcessesSnapshot } from './process.js';
+import type { ThermalSnapshot } from './thermal.js';
 
 /** What the collector gathers on each tick. */
 export interface CollectorConfig {
@@ -29,7 +30,7 @@ export interface CollectionDiagnostics {
   cpuDurationMs: number;
   memoryDurationMs: number;
   processDurationMs: number;
-  /** Disk, network and GPU together: they all read from one PDH query. */
+  /** Disk, network, GPU and temperatures together: one shared PDH query. */
   deviceDurationMs: number;
   issues: CollectorIssue[];
   /** Snapshots dropped because JavaScript could not accept them in time. */
@@ -61,6 +62,7 @@ export interface SystemSnapshot {
   disks: DisksSnapshot;
   network: NetworkSnapshot;
   gpu: GpuSnapshot;
+  thermal: ThermalSnapshot;
   diagnostics: CollectionDiagnostics;
 }
 

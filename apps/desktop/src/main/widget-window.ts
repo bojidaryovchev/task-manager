@@ -17,6 +17,29 @@ const SNAP_DISTANCE = 24;
 /** Minimum on-screen area, in pixels, for a stored position to be reusable. */
 const MIN_VISIBLE_AREA = 40 * 40;
 
+/**
+ * Bounds a renderer-reported content width is clamped to.
+ *
+ * The report comes from a renderer, so it is treated as untrusted input like
+ * everything else that crosses that boundary: a bad value must not be able to
+ * produce a window too small to grab or one that spans the desktop.
+ */
+const MIN_MEASURED_WIDTH = 120;
+const MAX_MEASURED_WIDTH = 1200;
+
+/**
+ * Coerce a renderer-reported width into something safe to give a window.
+ *
+ * Exported so the boundary is testable on its own: this is the one place a
+ * number from a renderer becomes a window dimension, and the failure modes -
+ * a window too small to grab, or one wider than the desktop - are exactly the
+ * kind that leave a frameless always-on-top widget unusable.
+ */
+export function clampMeasuredWidth(width: unknown): number | null {
+  if (typeof width !== 'number' || !Number.isFinite(width) || width <= 0) return null;
+  return Math.round(Math.min(Math.max(width, MIN_MEASURED_WIDTH), MAX_MEASURED_WIDTH));
+}
+
 export interface WidgetWindowHost {
   settings: SettingsStore;
   preloadPath: string;
@@ -28,6 +51,8 @@ export class WidgetWindow {
   #window: BrowserWindow | null = null;
   #host: WidgetWindowHost;
   #saveTimer: NodeJS.Timeout | null = null;
+  /** Last width the widget measured for itself, or null before it has reported. */
+  #measuredWidth: number | null = null;
 
   constructor(host: WidgetWindowHost) {
     this.#host = host;
@@ -142,7 +167,7 @@ export class WidgetWindow {
   resizeForLayout(settings: WidgetSettings): void {
     if (!this.isOpen) return;
     const window = this.#window as BrowserWindow;
-    const size = widgetLayoutSize(settings.layout, settings.metrics.length);
+    const size = this.#sizeFor(settings);
     const current = window.getBounds();
     if (current.width === size.width && current.height === size.height) return;
     window.setBounds(
@@ -150,6 +175,41 @@ export class WidgetWindow {
       false,
     );
     this.#persistBounds();
+  }
+
+  /**
+   * Accept the widget's own measurement of how wide its content is.
+   *
+   * Applied only to the minimal layout, which is the only one whose width is
+   * decided by its content rather than fixed. The estimate in
+   * `widgetLayoutSize` deliberately errs wide, so until this arrives the
+   * content is never clipped - only surrounded by more space than it needs.
+   */
+  setMeasuredContentWidth(width: number, settings: WidgetSettings): void {
+    const clamped = clampMeasuredWidth(width);
+    if (clamped === null || clamped === this.#measuredWidth) return;
+    this.#measuredWidth = clamped;
+    this.resizeForLayout(settings);
+  }
+
+  /**
+   * The size to give the window.
+   *
+   * A measurement wins over the estimate where one exists, which today means
+   * the minimal layout. The others are fixed-width by design: their bars and
+   * charts need a stable amount of room, and sizing them to their text would
+   * make the widget breathe every time a value changed width.
+   */
+  #sizeFor(settings: WidgetSettings): { width: number; height: number } {
+    const size = widgetLayoutSize(
+      settings.layout,
+      settings.metrics.length,
+      settings.showTemperatures,
+    );
+    if (settings.layout === 'minimal' && this.#measuredWidth !== null) {
+      return { ...size, width: this.#measuredWidth };
+    }
+    return size;
   }
 
   applyClickThrough(enabled: boolean): void {
@@ -199,7 +259,7 @@ export class WidgetWindow {
  * unreachable, is replaced by a sensible spot on the primary display.
  */
 export function resolveBounds(settings: WidgetSettings): WidgetBounds {
-  const size = widgetLayoutSize(settings.layout, settings.metrics.length);
+  const size = widgetLayoutSize(settings.layout, settings.metrics.length, settings.showTemperatures);
   const stored = settings.bounds;
   if (stored) {
     const candidate: WidgetBounds = { ...stored, ...size };

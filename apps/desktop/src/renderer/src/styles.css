@@ -138,6 +138,34 @@ body {
   font-weight: 600;
 }
 
+/* The temperature column. Deliberately quieter than the metric's own value:
+   it is supporting information, and it must not compete with the number the
+   widget is actually about. Still held to the 4.5:1 text minimum. */
+.widget-temp {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+/* A reading whose sensor is not the thing the label names — currently only the
+   ACPI thermal zone beside CPU. The underline is the visual claim that this
+   needs explaining, and the tooltip explains it. */
+.widget-temp-indirect {
+  text-decoration: underline dotted var(--color-border-strong);
+  text-underline-offset: 2px;
+}
+
+/* At or above a threshold the vendor published. Never applied to a sensor that
+   came without thresholds, because then there is nothing to be above. */
+.widget-temp-hot {
+  color: var(--color-warn);
+}
+
+.widget-temp-absent {
+  color: var(--color-text-muted);
+}
+
 .widget-process {
   font-size: 11px;
   color: var(--color-text-secondary);

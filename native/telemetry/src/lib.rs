@@ -3,7 +3,7 @@
 //! Layout mirrors the pipeline:
 //!
 //! * `win` - raw Windows API access, the only place `unsafe` appears.
-//! * `cpu`, `memory`, `process`, `disk`, `network`, `gpu` - collection and
+//! * `cpu`, `memory`, `process`, `disk`, `network`, `gpu`, `thermal` - collection and
 //!   calculation, one module per subsystem, each owning the previous-sample
 //!   state its rates need.
 //! * `sampling` - the single engine that drives every collector on one cadence.
@@ -26,6 +26,7 @@ pub mod memory;
 pub mod network;
 pub mod process;
 pub mod sampling;
+pub mod thermal;
 pub mod win;
 
 use std::sync::atomic::Ordering;

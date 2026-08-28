@@ -1,4 +1,4 @@
-import type { SystemSnapshot } from '@task-manager/telemetry-types';
+import type { SystemSnapshot, TemperatureReading } from '@task-manager/telemetry-types';
 import {
   formatBitsPerSecond,
   formatBytes,
@@ -15,6 +15,30 @@ import { useTelemetry } from '../lib/hooks.js';
  * native collector; nothing in this file divides one counter by another.
  */
 
+/**
+ * A temperature shown beside a metric.
+ *
+ * `detail` is the whole provenance — source, sensor name and, where the sensor
+ * does not directly name the thing in the metric's label, a statement of what it
+ * actually is. It is shown as the tooltip, so a number is never on screen
+ * without a way to find out what produced it.
+ */
+export interface WidgetTemperature {
+  celsius: number;
+  detail: string;
+  /**
+   * True when the sensor is not the thing the metric's label names.
+   *
+   * Only the ACPI thermal zone shown beside CPU is indirect: it is a real live
+   * sensor, but what it is attached to is defined by the machine's firmware and
+   * documented nowhere, so it is not a CPU package reading. Rendered with a
+   * dotted underline to mark it as such.
+   */
+  indirect: boolean;
+  /** True when the reading is at or above a threshold the *vendor* published. */
+  overThreshold: boolean;
+}
+
 export interface WidgetMetricValue {
   label: string;
   definition: string;
@@ -26,6 +50,13 @@ export interface WidgetMetricValue {
    */
   fraction: number | null;
   accent: string;
+  /**
+   * The temperature to show between the label and the value, or null when no
+   * sensor exists for this metric. Null is rendered as an em dash — the same
+   * convention the rest of the application uses for "not measured" — rather
+   * than as a zero or an omitted column.
+   */
+  temperature: WidgetTemperature | null;
 }
 
 const ACCENTS: Partial<Record<WidgetMetricId, string>> = {
@@ -55,6 +86,108 @@ function busiestAdapter(snapshot: SystemSnapshot) {
 
 const DESCRIPTORS = new Map(WIDGET_METRICS.map((metric) => [metric.id, metric]));
 
+/** Human wording for each source, used in the tooltip. */
+const SOURCE_LABELS: Record<TemperatureReading['source'], string> = {
+  acpiThermalZone: 'ACPI thermal zone',
+  nvml: 'NVIDIA NVML',
+  storageDevice: 'drive sensor',
+};
+
+/** Turn a reading into what the widget shows, tooltip and all. */
+function toWidgetTemperature(
+  reading: TemperatureReading | undefined,
+  options: { indirect?: boolean; note?: string } = {},
+): WidgetTemperature | null {
+  if (!reading) return null;
+  const threshold = reading.warningCelsius ?? reading.criticalCelsius;
+  const parts = [
+    `${reading.celsius.toFixed(1)} °C`,
+    `${SOURCE_LABELS[reading.source]} — ${reading.sensor}`,
+  ];
+  if (options.note) parts.push(options.note);
+  if (reading.warningCelsius !== undefined) {
+    parts.push(`Vendor throttling threshold: ${reading.warningCelsius} °C`);
+  }
+  if (reading.criticalCelsius !== undefined) {
+    parts.push(`Vendor critical threshold: ${reading.criticalCelsius} °C`);
+  }
+  // A value polled a moment ago should not be presented as instantaneous.
+  if (reading.measuredAgoMs >= 1000) {
+    parts.push(`Measured ${Math.round(reading.measuredAgoMs / 1000)}s ago`);
+  }
+  return {
+    celsius: reading.celsius,
+    detail: parts.join('\n'),
+    indirect: options.indirect === true,
+    // Only ever true against a threshold the vendor published. Nothing here
+    // invents a "hot" level for a sensor that came with no thresholds.
+    overThreshold: threshold !== undefined && reading.celsius >= threshold,
+  };
+}
+
+/**
+ * The ACPI zone shown beside the CPU metrics.
+ *
+ * This is not a CPU package temperature and is never labelled as one. Windows
+ * exposes no CPU package sensor to an unelevated process — that needs an MSR
+ * read through a kernel-mode driver — so the honest best is the firmware's own
+ * thermal zone, shown under its own name.
+ */
+function zoneTemperature(snapshot: SystemSnapshot): WidgetTemperature | null {
+  return toWidgetTemperature(snapshot.thermal.primaryZone, {
+    indirect: true,
+    note: 'A thermal zone declared by this machine’s firmware. What it is attached to is vendor-defined, so this is not a CPU package reading.',
+  });
+}
+
+/** The hottest drive, for the disk metrics, which are themselves aggregates. */
+function hottestDrive(snapshot: SystemSnapshot): WidgetTemperature | null {
+  const hottest = snapshot.thermal.drives.reduce<TemperatureReading | undefined>(
+    (best, drive) => (best === undefined || drive.celsius > best.celsius ? drive : best),
+    undefined,
+  );
+  return toWidgetTemperature(hottest, {
+    note:
+      snapshot.thermal.drives.length > 1
+        ? `Hottest of ${snapshot.thermal.drives.length} drives reporting a temperature.`
+        : undefined,
+  });
+}
+
+/**
+ * The temperature belonging to a metric, or null when nothing measures it.
+ *
+ * The mapping is deliberately conservative. Memory and network get nothing
+ * because nothing on Windows measures them: SPD module sensors sit behind the
+ * SMBus with no API in front of them, and a network adapter publishes no
+ * temperature at all. Returning null there — rendered as an em dash — says
+ * "not measured", which is true, where any number would not be.
+ */
+function temperatureFor(
+  id: WidgetMetricId,
+  snapshot: SystemSnapshot,
+): WidgetTemperature | null {
+  switch (id) {
+    case 'cpuUtilization':
+    case 'cpuUtility':
+    case 'cpuBusiest':
+      return zoneTemperature(snapshot);
+    case 'gpu':
+    case 'vram':
+      // The adapter's own sensor, joined on by the collector. Absent for every
+      // non-NVIDIA adapter, since neither AMD nor Intel publishes one.
+      return toWidgetTemperature(busiestAdapter(snapshot)?.temperature);
+    case 'diskRead':
+    case 'diskWrite':
+      return hottestDrive(snapshot);
+    case 'memoryPercent':
+    case 'memoryUsed':
+    case 'networkDown':
+    case 'networkUp':
+      return null;
+  }
+}
+
 /** Pull one metric out of a snapshot. Pure, so it is trivially testable. */
 export function readMetric(
   id: WidgetMetricId,
@@ -65,6 +198,7 @@ export function readMetric(
     label: descriptor?.label ?? id,
     definition: descriptor?.definition ?? '',
     accent: ACCENTS[id] ?? 'var(--color-accent)',
+    temperature: snapshot ? temperatureFor(id, snapshot) : null,
   };
 
   if (!snapshot) return { ...base, text: '—', fraction: null };
@@ -170,6 +304,12 @@ function clamp(value: number): number {
 export function useWidgetMetric(id: WidgetMetricId): WidgetMetricValue {
   return useTelemetry(
     (snapshot) => readMetric(id, snapshot),
-    (a, b) => a.text === b.text && a.fraction === b.fraction,
+    // The temperature has to take part in this comparison: without it a row
+    // whose value has not changed would keep rendering a stale degree reading.
+    (a, b) =>
+      a.text === b.text &&
+      a.fraction === b.fraction &&
+      a.temperature?.celsius === b.temperature?.celsius &&
+      a.temperature?.overThreshold === b.temperature?.overThreshold,
   );
 }

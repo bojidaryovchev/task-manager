@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { WidgetMetricId, WidgetSettings } from '@shared/widget';
 import { Chart } from '../../components/Chart.js';
+import { TemperatureCell } from '../TemperatureCell.js';
 import { useTelemetry } from '../../lib/hooks.js';
 import {
   telemetryStore,
@@ -51,13 +52,19 @@ export function PerformanceLayout({
   return (
     <div className="flex h-full flex-col gap-1.5 px-2.5 py-2">
       {settings.metrics.map((id) => (
-        <PerformanceRow key={id} id={id} />
+        <PerformanceRow key={id} id={id} showTemperature={settings.showTemperatures} />
       ))}
     </div>
   );
 }
 
-const PerformanceRow = memo(function PerformanceRow({ id }: { id: WidgetMetricId }) {
+const PerformanceRow = memo(function PerformanceRow({
+  id,
+  showTemperature,
+}: {
+  id: WidgetMetricId;
+  showTemperature: boolean;
+}) {
   const metric = useWidgetMetric(id);
   const seriesName = SERIES_FOR[id];
   // Memory in bytes has no fixed ceiling, so its graph scales to the machine's
@@ -68,10 +75,13 @@ const PerformanceRow = memo(function PerformanceRow({ id }: { id: WidgetMetricId
 
   return (
     <div className="min-h-0 flex-1" title={metric.definition}>
-      <div className="flex items-baseline justify-between">
-        <span className="widget-label">{metric.label}</span>
-        <span className="tnum widget-value-sm" style={{ color: metric.accent }}>
-          {metric.text}
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="widget-label truncate">{metric.label}</span>
+        <span className="flex shrink-0 items-baseline gap-2">
+          {showTemperature && <TemperatureCell temperature={metric.temperature} />}
+          <span className="tnum widget-value-sm" style={{ color: metric.accent }}>
+            {metric.text}
+          </span>
         </span>
       </div>
       {seriesName && (

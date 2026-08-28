@@ -138,6 +138,17 @@ export function DiskPage(): React.JSX.Element {
               />
               <Field label="Reads/s" value={formatCount(disk.readsPerSecond)} />
               <Field label="Writes/s" value={formatCount(disk.writesPerSecond)} />
+              <Field
+                label="Temperature"
+                value={
+                  disk.temperature ? `${disk.temperature.celsius.toFixed(0)} °C` : '—'
+                }
+                definition={
+                  disk.temperature
+                    ? `The drive's own sensor (${disk.temperature.sensor}), read through IOCTL_STORAGE_QUERY_PROPERTY. Refreshed every 10 seconds — a drive has far too much thermal mass for a faster poll to say anything more.`
+                    : 'This device does not implement the storage temperature property, so no reading is available. It is not being reported as zero.'
+                }
+              />
             </div>
           </Panel>
         ))}
@@ -374,6 +385,19 @@ const AdapterCard = memo(function AdapterCard({
                 )}`
           }
           definition="System memory the adapter is using, against the total it may share."
+        />
+        <Field
+          label="Temperature"
+          value={adapter.temperature ? `${adapter.temperature.celsius.toFixed(0)} °C` : '—'}
+          definition={
+            adapter.temperature
+              ? `The GPU's own die sensor, read through NVIDIA's NVML — the library nvidia-smi is built on. Refreshed once a second.${
+                  adapter.temperature.warningCelsius !== undefined
+                    ? ` The driver begins throttling at ${adapter.temperature.warningCelsius} °C.`
+                    : ''
+                }`
+              : 'No temperature source for this adapter. Only NVIDIA publishes GPU temperature through a library present on an end-user machine; AMD and Intel expose it through neither a Windows API nor a counter set.'
+          }
         />
         {adapter.name === undefined && (
           <Field

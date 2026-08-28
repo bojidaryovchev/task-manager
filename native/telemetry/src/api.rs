@@ -303,6 +303,7 @@ pub struct JsSystemSnapshot {
     pub disks: JsDisksSnapshot,
     pub network: JsNetworkSnapshot,
     pub gpu: JsGpuSnapshot,
+    pub thermal: JsThermalSnapshot,
     pub diagnostics: JsCollectionDiagnostics,
 }
 
@@ -576,6 +577,9 @@ pub struct JsDiskSnapshot {
     pub queue_length: Option<f64>,
     pub reads_per_second: Option<f64>,
     pub writes_per_second: Option<f64>,
+    /// The drive's own sensor. Absent for the `_Total` aggregate and for any
+    /// device that does not implement the temperature property.
+    pub temperature: Option<JsTemperatureReading>,
 }
 
 #[napi(object)]
@@ -641,6 +645,8 @@ pub struct JsGpuAdapterSnapshot {
     pub dedicated_memory_total_bytes: Option<f64>,
     pub shared_memory_used_bytes: Option<f64>,
     pub shared_memory_total_bytes: Option<f64>,
+    /// Die temperature, when a vendor library reported one for this adapter.
+    pub temperature: Option<JsTemperatureReading>,
 }
 
 #[napi(object)]
@@ -673,6 +679,7 @@ fn disk_to_js(sample: &crate::disk::DiskSample) -> JsDiskSnapshot {
         queue_length: sample.queue_length,
         reads_per_second: sample.reads_per_second,
         writes_per_second: sample.writes_per_second,
+        temperature: sample.temperature.as_ref().map(temperature_to_js),
     }
 }
 
@@ -726,9 +733,128 @@ pub fn gpu_to_js(sample: &crate::gpu::GpuSample) -> JsGpuSnapshot {
                 shared_memory_total_bytes: adapter
                     .shared_memory_total_bytes
                     .map(|value| value as f64),
+                temperature: adapter.temperature.as_ref().map(temperature_to_js),
             })
             .collect(),
         unavailable: sample.unavailable,
+    }
+}
+
+// --- thermal ----------------------------------------------------------------
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsTemperatureReading {
+    pub celsius: f64,
+    /// The source is what says how much the number can be trusted, so it
+    /// travels with every reading.
+    ///
+    /// Declared with an explicit `ts_type` so the generated declarations carry
+    /// the same union the published types do. A napi string enum would generate
+    /// a TypeScript `enum`, and a string literal is not assignable to an enum
+    /// member, which would break the bidirectional contract check in
+    /// `native-contract.ts` in one direction only - the worst kind of drift.
+    #[napi(ts_type = "'acpiThermalZone' | 'nvml' | 'storageDevice'")]
+    pub source: String,
+    /// Exactly what reported it - an ACPI zone name, a GPU board name, a drive
+    /// model. Never a category such as "CPU".
+    pub sensor: String,
+    /// Where the vendor says throttling begins, when it publishes a threshold.
+    pub warning_celsius: Option<f64>,
+    /// Where the vendor says the device is in danger, when it publishes one.
+    pub critical_celsius: Option<f64>,
+    /// Age of the measurement. Zero for zone counters, read every sample; up to
+    /// the source's refresh interval for the ones polled more slowly.
+    pub measured_ago_ms: f64,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsThermalZoneSnapshot {
+    /// The zone's ACPI name, e.g. `\_TZ.TZ01`.
+    pub instance: String,
+    pub celsius: f64,
+    /// True when the value came from `High Precision Temperature`.
+    pub high_precision: bool,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsThermalSnapshot {
+    /// Every ACPI zone reporting a physically plausible value, hottest first.
+    pub zones: Vec<JsThermalZoneSnapshot>,
+    /// The hottest zone as a reading. **Not a CPU package temperature**: what an
+    /// ACPI zone is attached to is defined by the system firmware, so it is
+    /// always presented under its own zone name.
+    pub primary_zone: Option<JsTemperatureReading>,
+    /// Every GPU a vendor library reported, whether or not it could be joined to
+    /// an adapter.
+    pub gpus: Vec<JsTemperatureReading>,
+    /// Every drive that reports a temperature.
+    pub drives: Vec<JsTemperatureReading>,
+    /// True when the `Thermal Zone Information` counter set is absent, which is
+    /// normal on a machine whose firmware declares no zones.
+    pub zones_unavailable: bool,
+    /// True when no NVIDIA driver is present. Not an error.
+    pub nvml_unavailable: bool,
+}
+
+pub fn temperature_to_js(reading: &crate::thermal::TemperatureReading) -> JsTemperatureReading {
+    JsTemperatureReading {
+        celsius: reading.celsius,
+        source: reading.source.as_str().to_string(),
+        sensor: reading.sensor.clone(),
+        warning_celsius: reading.warning_celsius,
+        critical_celsius: reading.critical_celsius,
+        measured_ago_ms: reading.measured_ago_ms,
+    }
+}
+
+pub fn thermal_to_js(sample: &crate::thermal::ThermalSample) -> JsThermalSnapshot {
+    JsThermalSnapshot {
+        zones: sample
+            .zones
+            .iter()
+            .map(|zone| JsThermalZoneSnapshot {
+                instance: zone.instance.clone(),
+                celsius: zone.celsius,
+                high_precision: zone.high_precision,
+            })
+            .collect(),
+        primary_zone: crate::thermal::primary_zone_reading(sample)
+            .as_ref()
+            .map(temperature_to_js),
+        gpus: sample
+            .gpus
+            .iter()
+            .map(|gpu| JsTemperatureReading {
+                celsius: gpu.celsius,
+                source: crate::thermal::TemperatureSource::Nvml.as_str().to_string(),
+                sensor: gpu.name.clone(),
+                warning_celsius: gpu.slowdown_celsius,
+                critical_celsius: gpu.shutdown_celsius,
+                measured_ago_ms: gpu.measured_ago_ms,
+            })
+            .collect(),
+        drives: sample
+            .drives
+            .iter()
+            .map(|drive| JsTemperatureReading {
+                celsius: drive.celsius,
+                source: crate::thermal::TemperatureSource::StorageDevice
+                    .as_str()
+                    .to_string(),
+                sensor: drive
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| format!("PhysicalDrive{}", drive.drive_index)),
+                warning_celsius: drive.warning_celsius,
+                critical_celsius: drive.critical_celsius,
+                measured_ago_ms: drive.measured_ago_ms,
+            })
+            .collect(),
+        zones_unavailable: sample.zones_unavailable,
+        nvml_unavailable: sample.nvml_unavailable,
     }
 }
 

@@ -150,6 +150,9 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     // invalid layout, an out-of-range opacity or an uncollected metric.
     return controller.update((patch ?? {}) as Partial<WidgetSettings>);
   });
+  ipcMain.handle(IpcChannel.ReportWidgetContentWidth, (_event, width: unknown) => {
+    controller.reportContentWidth(typeof width === 'number' ? width : 0);
+  });
   ipcMain.handle(IpcChannel.ShowMainWindow, () => showMainWindow());
   ipcMain.handle(IpcChannel.ShowWidgetMenu, (_event, x: unknown, y: unknown) => {
     controller.popupWidgetMenu(

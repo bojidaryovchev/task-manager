@@ -1,3 +1,5 @@
+import type { TemperatureReading } from './thermal.js';
+
 /**
  * Disk, network and GPU models.
  *
@@ -34,6 +36,12 @@ export interface DiskSnapshot {
   queueLength?: number;
   readsPerSecond?: number;
   writesPerSecond?: number;
+  /**
+   * The drive's own sensor, joined on by disk number. Absent for the `_Total`
+   * aggregate — an aggregate has no temperature — and for any device that does
+   * not implement the property.
+   */
+  temperature?: TemperatureReading;
 }
 
 export interface DisksSnapshot {
@@ -114,6 +122,16 @@ export interface GpuAdapterSnapshot {
   sharedMemoryUsedBytes?: number;
   /** Total system memory the adapter may share, from DXGI. */
   sharedMemoryTotalBytes?: number;
+  /**
+   * Die temperature, when a vendor library reported one for this adapter.
+   *
+   * Absent for every non-NVIDIA adapter, and also when two identical boards
+   * make the join ambiguous — nothing documents NVML's enumeration order as
+   * corresponding to DXGI's, so matching them by position could show one card's
+   * temperature against the other. Those readings still appear under
+   * `ThermalSnapshot.gpus`.
+   */
+  temperature?: TemperatureReading;
 }
 
 export interface GpuSnapshot {

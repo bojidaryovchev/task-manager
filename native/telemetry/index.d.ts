@@ -145,6 +145,11 @@ export interface JsDiskSnapshot {
   queueLength?: number
   readsPerSecond?: number
   writesPerSecond?: number
+  /**
+   * The drive's own sensor. Absent for the `_Total` aggregate and for any
+   * device that does not implement the temperature property.
+   */
+  temperature?: JsTemperatureReading
 }
 
 export interface JsDisksSnapshot {
@@ -175,6 +180,8 @@ export interface JsGpuAdapterSnapshot {
   dedicatedMemoryTotalBytes?: number
   sharedMemoryUsedBytes?: number
   sharedMemoryTotalBytes?: number
+  /** Die temperature, when a vendor library reported one for this adapter. */
+  temperature?: JsTemperatureReading
 }
 
 export interface JsGpuEngineSnapshot {
@@ -429,7 +436,70 @@ export interface JsSystemSnapshot {
   disks: JsDisksSnapshot
   network: JsNetworkSnapshot
   gpu: JsGpuSnapshot
+  thermal: JsThermalSnapshot
   diagnostics: JsCollectionDiagnostics
+}
+
+export interface JsTemperatureReading {
+  celsius: number
+  /**
+   * The source is what says how much the number can be trusted, so it
+   * travels with every reading.
+   *
+   * Declared with an explicit `ts_type` so the generated declarations carry
+   * the same union the published types do. A napi string enum would generate
+   * a TypeScript `enum`, and a string literal is not assignable to an enum
+   * member, which would break the bidirectional contract check in
+   * `native-contract.ts` in one direction only - the worst kind of drift.
+   */
+  source: 'acpiThermalZone' | 'nvml' | 'storageDevice'
+  /**
+   * Exactly what reported it - an ACPI zone name, a GPU board name, a drive
+   * model. Never a category such as "CPU".
+   */
+  sensor: string
+  /** Where the vendor says throttling begins, when it publishes a threshold. */
+  warningCelsius?: number
+  /** Where the vendor says the device is in danger, when it publishes one. */
+  criticalCelsius?: number
+  /**
+   * Age of the measurement. Zero for zone counters, read every sample; up to
+   * the source's refresh interval for the ones polled more slowly.
+   */
+  measuredAgoMs: number
+}
+
+export interface JsThermalSnapshot {
+  /** Every ACPI zone reporting a physically plausible value, hottest first. */
+  zones: Array<JsThermalZoneSnapshot>
+  /**
+   * The hottest zone as a reading. **Not a CPU package temperature**: what an
+   * ACPI zone is attached to is defined by the system firmware, so it is
+   * always presented under its own zone name.
+   */
+  primaryZone?: JsTemperatureReading
+  /**
+   * Every GPU a vendor library reported, whether or not it could be joined to
+   * an adapter.
+   */
+  gpus: Array<JsTemperatureReading>
+  /** Every drive that reports a temperature. */
+  drives: Array<JsTemperatureReading>
+  /**
+   * True when the `Thermal Zone Information` counter set is absent, which is
+   * normal on a machine whose firmware declares no zones.
+   */
+  zonesUnavailable: boolean
+  /** True when no NVIDIA driver is present. Not an error. */
+  nvmlUnavailable: boolean
+}
+
+export interface JsThermalZoneSnapshot {
+  /** The zone's ACPI name, e.g. `\_TZ.TZ01`. */
+  instance: string
+  celsius: number
+  /** True when the value came from `High Precision Temperature`. */
+  highPrecision: boolean
 }
 
 /** Confirms the native module loaded and reports its version. */

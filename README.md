@@ -88,6 +88,7 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `node tools/devtools.mjs shot <file.png> [page]` | Drive the running app over the DevTools protocol (needs `--remote-debugging-port`) |
 | `node tools/fixtures/cpu-load.mjs [threads] [seconds]` | A controlled CPU workload, on its own |
 | `python tools/generate-icons.py` | Regenerate the application icons from `logo.png` (needs Pillow) |
+| `cargo run --example probe_temperature` (in `native/telemetry`) | Report which temperature sources this machine exposes to an unelevated process, and what the collector costs to run |
 | `TASK_MANAGER_TARGET=widget node tools/devtools.mjs shot <file.png>` | Capture the widget window rather than the main one |
 
 ---
@@ -225,10 +226,18 @@ Each point carries the peak within its window alongside the mean, because an
 average hides the spike a post-hoc question is about. Around 5400 rows total, so
 the database stays a few hundred kilobytes however long it runs.
 
+**Temperature** — the three sources readable without administrator, each shown
+under the name of the sensor that produced it: NVIDIA GPU die temperature via
+NVML (joined to its adapter by PCI id, with the vendor's own throttle and
+shutdown thresholds), drive temperature via `IOCTL_STORAGE_QUERY_PROPERTY`
+(joined to its disk by disk number), and ACPI thermal zones via the
+`Thermal Zone Information` counter set. There is no CPU package temperature and
+no memory temperature, and neither is approximated — see below.
+
 **Desktop widget** — a frameless, always-on-top overlay in four layouts
-(minimal, compact, performance, top consumers), with selectable metrics,
-adjustable opacity, click-through, position lock, edge snapping and persisted
-placement. It is a second window in the same application reading the same
+(minimal, compact, performance, top consumers), with selectable metrics, an
+optional temperature column between each label and its value, adjustable
+opacity, click-through, position lock, edge snapping and persisted placement. It is a second window in the same application reading the same
 snapshot stream, so it cannot disagree with the main window.
 
 **Tray** — live tooltip from the same snapshots, and the menu that controls the
@@ -293,9 +302,23 @@ error of −2.01% attributable to scheduler contention on an already-busy machin
   attribution needs ETW.
 - **History covers system-wide metrics only.** Per-process history, and
   file-level I/O attribution, are not implemented.
-- **CPU temperature is not collected.** Windows exposes no reliable
-  vendor-neutral source for it, so the widget does not offer it rather than
-  depending on undocumented vendor interfaces.
+- **There is no CPU package temperature, and the thermal zone is not one.**
+  Reaching a true package sensor means an MSR read through a signed kernel-mode
+  driver, which would require an installer and administrator rights. What is
+  shown beside CPU instead is an ACPI thermal zone: a real live sensor the system
+  firmware declares, which on tested hardware tracks CPU load within one sample,
+  but whose physical attachment is documented neither by ACPI nor by Windows. It
+  is always labelled with its own zone name, marked with a dotted underline, and
+  its tooltip says what it is. `MSAcpi_ThermalZoneTemperature` was checked and
+  needs administrator; `Win32_TemperatureProbe` was checked and has no instances.
+- **Memory temperature is not available at all.** Module sensors sit behind the
+  SMBus and no Windows API exposes it, so memory metrics show an em dash rather
+  than a number from elsewhere.
+- **GPU temperature is NVIDIA-only.** Neither AMD nor Intel publishes it through
+  a Windows API or a counter set, and their SDKs are not present on an end-user
+  machine. Those adapters report no temperature. Two identical NVIDIA boards also
+  report none per-adapter, because nothing documents NVML's enumeration order as
+  matching DXGI's and guessing could show one card's temperature on the other.
 - **Windows 11 x64 only.** The collectors are deliberately Windows-native; there
   is no cross-platform abstraction compromising them.
 

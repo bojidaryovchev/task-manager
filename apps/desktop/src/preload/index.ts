@@ -40,6 +40,11 @@ const api: TaskManagerApi = {
   showMainWindow: () => ipcRenderer.invoke(IpcChannel.ShowMainWindow),
   showWidgetMenu: (x: number, y: number) =>
     ipcRenderer.invoke(IpcChannel.ShowWidgetMenu, x, y),
+  reportWidgetContentWidth: (width: number) =>
+    ipcRenderer.invoke(
+      IpcChannel.ReportWidgetContentWidth,
+      typeof width === 'number' && Number.isFinite(width) ? width : 0,
+    ),
   onWidgetSettings: (listener: (settings: WidgetSettings) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, settings: WidgetSettings): void => {
       listener(settings);

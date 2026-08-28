@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::api::{
-    cpu_to_js, disks_to_js, gpu_to_js, memory_to_js, network_to_js, processes_to_js,
+    cpu_to_js, disks_to_js, gpu_to_js, memory_to_js, network_to_js, processes_to_js, thermal_to_js,
     topology_to_js, CpuConversionContext, JsCollectionDiagnostics, JsCollectorConfig,
     JsCollectorIssue, JsSystemSnapshot,
 };
@@ -35,6 +35,7 @@ use crate::history::{HistorySample, HistoryStore};
 use crate::memory::MemoryCollector;
 use crate::network::NetworkCollector;
 use crate::process::ProcessCollector;
+use crate::thermal::{self, ThermalCollector};
 use crate::win::pdh::{PdhCpuCounters, PdhCpuSample, PdhQuery};
 
 use windows_sys::Win32::System::SystemInformation::GetTickCount64;
@@ -129,6 +130,7 @@ pub struct Collectors {
     disk: DiskCollector,
     network: NetworkCollector,
     gpu: GpuCollector,
+    thermal: ThermalCollector,
     /// One PDH query serving every subsystem. Collected exactly once per
     /// interval: PDH derives its rates from the gap between collections, so
     /// collecting per-subsystem would silently change what each rate means.
@@ -151,18 +153,22 @@ impl Collectors {
         // missing on this machine simply yields no counter id, and the owning
         // collector reports its values as unavailable.
         let mut pdh = PdhQuery::open();
-        let (pdh_cpu, disk, network, gpu) = match pdh.as_mut() {
+        let (pdh_cpu, disk, network, gpu, thermal) = match pdh.as_mut() {
             Some(query) => (
                 Some(PdhCpuCounters::register(query)),
                 DiskCollector::register(query),
                 NetworkCollector::register(query),
                 GpuCollector::register(query),
+                ThermalCollector::register(query),
             ),
             None => (
                 None,
                 DiskCollector::unavailable(),
                 NetworkCollector::unavailable(),
                 GpuCollector::unavailable(),
+                // NVML and the storage IOCTL do not go through PDH, so they are
+                // still worth attempting on a machine where PDH failed.
+                ThermalCollector::unavailable(),
             ),
         };
 
@@ -173,6 +179,7 @@ impl Collectors {
             disk,
             network,
             gpu,
+            thermal,
             pdh,
             pdh_cpu,
             history: None,
@@ -282,7 +289,7 @@ impl Collectors {
 
         // --- disk, network and GPU, all from the shared PDH query
         let devices_started = Instant::now();
-        let (disks_sample, network_sample, gpu_sample) = match self.pdh.as_ref() {
+        let (mut disks_sample, network_sample, mut gpu_sample) = match self.pdh.as_ref() {
             Some(query) => (
                 self.disk.sample(query),
                 self.network.sample(query),
@@ -290,6 +297,13 @@ impl Collectors {
             ),
             None => Default::default(),
         };
+
+        // Temperatures, then joined onto the devices they belong to. The join
+        // happens here rather than in the UI so that every presentation sees an
+        // adapter or a disk that already carries its own sensor reading.
+        let thermal_sample = self.thermal.sample(self.pdh.as_ref(), monotonic_ms);
+        thermal::attach_to_adapters(&thermal_sample, self.gpu.adapters(), &mut gpu_sample);
+        thermal::attach_to_disks(&thermal_sample, &mut disks_sample);
         let devices_duration_ms = devices_started.elapsed().as_secs_f64() * 1000.0;
 
         // GPU usage is per-PID, so it joins onto the process list rather than
@@ -380,6 +394,7 @@ impl Collectors {
             disks: disks_to_js(&disks_sample),
             network: network_to_js(&network_sample),
             gpu: gpu_to_js(&gpu_sample),
+            thermal: thermal_to_js(&thermal_sample),
             diagnostics: JsCollectionDiagnostics {
                 total_duration_ms: started.elapsed().as_secs_f64() * 1000.0,
                 cpu_duration_ms,

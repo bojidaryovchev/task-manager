@@ -162,6 +162,15 @@ export interface WidgetSettings {
   opacity: number;
   /** Snap to the nearest screen edge or corner when released. */
   snapToEdges: boolean;
+  /**
+   * Show a temperature column between each metric's label and its value.
+   *
+   * Off by default would hide a real measurement; on by default costs about 34
+   * pixels of width. A metric with no sensor behind it shows an em dash rather
+   * than being omitted, so the column never implies a reading that was not
+   * taken.
+   */
+  showTemperatures: boolean;
   /** Last position and size, or null before the widget has ever been placed. */
   bounds: WidgetBounds | null;
 }
@@ -175,6 +184,7 @@ export const DEFAULT_WIDGET_SETTINGS: WidgetSettings = {
   locked: false,
   opacity: 0.95,
   snapToEdges: true,
+  showTemperatures: true,
   bounds: null,
 };
 
@@ -190,22 +200,35 @@ export const DEFAULT_WIDGET_SETTINGS: WidgetSettings = {
 export function widgetLayoutSize(
   layout: WidgetLayout,
   metricCount: number,
+  showTemperatures = false,
 ): { width: number; height: number } {
   const count = Math.max(1, metricCount);
+  // Width of the temperature column plus its gap, matching TEMPERATURE_COLUMN
+  // in the layout components. Zero when the column is not drawn, so turning
+  // temperatures off gives the width straight back rather than leaving a gap.
+  const temperature = showTemperatures ? 34 : 0;
   switch (layout) {
     case 'minimal':
-      // One line; width grows with the number of values, up to something that
-      // still sits sensibly against a screen edge.
-      return { width: Math.min(28 + count * 88, 520), height: 40 };
+      // One line. This is the only layout whose width depends on the text it
+      // happens to be showing, so this is a deliberately generous *starting*
+      // estimate: the widget measures itself and reports its real width, and
+      // main uses that instead (see `useContentWidth`). Erring wide means the
+      // worst case before that report arrives is a little empty space rather
+      // than clipped values.
+      return {
+        width: Math.min(28 + count * (88 + temperature), 520 + temperature),
+        height: 40,
+      };
     case 'compact':
       // 20px row plus a 6px gap, inside 8px vertical padding. Wide enough for
       // the label column, a readable bar and a right-aligned value.
-      return { width: 248, height: 12 + count * 26 };
+      return { width: 248 + temperature, height: 12 + count * 26 };
     case 'performance':
       // 15px label plus a 30px chart plus a 6px gap, inside 8px padding.
-      return { width: 262, height: 12 + count * 51 };
+      return { width: 262 + temperature, height: 12 + count * 51 };
     case 'topConsumers':
-      // Two fixed sections of three rows; independent of the metric selection.
+      // Two fixed sections of three rows; independent of the metric selection,
+      // and showing processes rather than the metrics a temperature attaches to.
       return { width: 262, height: 176 };
   }
 }
@@ -250,6 +273,7 @@ export function normaliseWidgetSettings(input: unknown): WidgetSettings {
     locked: source.locked === true,
     opacity,
     snapToEdges: source.snapToEdges !== false,
+    showTemperatures: source.showTemperatures !== false,
     bounds: normaliseBounds(source.bounds),
   };
 }
