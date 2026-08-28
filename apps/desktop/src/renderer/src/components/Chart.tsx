@@ -4,10 +4,16 @@ import { telemetryStore } from '../lib/telemetry-store.js';
 
 export interface ChartSeries {
   buffer: RingBuffer;
-  /** CSS colour for the stroke. */
+  /**
+   * Stroke colour. May be a design token reference such as `var(--color-cpu)`;
+   * it is resolved to a concrete colour before it reaches the canvas.
+   */
   color: string;
-  /** Optional fill under the line, usually the stroke colour at low alpha. */
-  fill?: string;
+  /**
+   * Fill under the line. `true` uses the stroke colour at a default alpha, a
+   * number sets that alpha explicitly, and omitting it draws no fill.
+   */
+  fill?: boolean | number;
   /** Draw as a dashed line, used for secondary/comparison series. */
   dashed?: boolean;
 }
@@ -29,6 +35,53 @@ export interface ChartProps {
    */
   windowSamples?: number;
   className?: string;
+}
+
+const DEFAULT_FILL_ALPHA = 0.22;
+const LINE_WIDTH = 1.75;
+
+/**
+ * Resolve a CSS colour to something a canvas will accept.
+ *
+ * A canvas context silently ignores an unparseable colour and keeps whatever it
+ * had, so passing `var(--color-cpu)` straight to `strokeStyle` leaves it at the
+ * default black - invisible on a dark background, and invisible in code review
+ * too, because nothing throws. Everything is resolved through here instead.
+ */
+function resolveColor(element: Element, color: string): string {
+  const token = color.trim().match(/^var\(\s*(--[\w-]+)\s*(?:,\s*(.+))?\)$/);
+  if (!token) return color;
+  const [, name, fallback] = token;
+  const value = getComputedStyle(element).getPropertyValue(name as string).trim();
+  if (value) return value;
+  return fallback?.trim() ?? '#ffffff';
+}
+
+/** Parse `#rgb`, `#rrggbb`, `rgb()` and `rgba()` into channels. */
+function parseChannels(color: string): [number, number, number] | null {
+  const value = color.trim();
+  if (value.startsWith('#')) {
+    let hex = value.slice(1);
+    if (hex.length === 3) hex = [...hex].map((c) => c + c).join('');
+    if (hex.length < 6) return null;
+    const channels = [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
+    return channels.every((c) => Number.isFinite(c))
+      ? (channels as [number, number, number])
+      : null;
+  }
+  const match = value.match(/^rgba?\(([^)]+)\)$/);
+  if (!match) return null;
+  const parts = (match[1] as string).split(/[,/\s]+/).filter(Boolean).map(Number);
+  if (parts.length < 3 || parts.slice(0, 3).some((c) => !Number.isFinite(c))) return null;
+  return parts.slice(0, 3) as [number, number, number];
+}
+
+/** The stroke colour at a given alpha, for the area under the line. */
+function withAlpha(color: string, alpha: number): string | null {
+  const channels = parseChannels(color);
+  if (!channels) return null;
+  const [r, g, b] = channels;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 /**
@@ -58,6 +111,16 @@ export function Chart({
 
     let frame = 0;
     let disposed = false;
+    // Token lookups go through getComputedStyle, so cache them for the lifetime
+    // of the chart rather than repeating them on every animation frame.
+    const colorCache = new Map<string, string>();
+    const resolve = (color: string): string => {
+      const cached = colorCache.get(color);
+      if (cached !== undefined) return cached;
+      const resolved = resolveColor(canvas, color);
+      colorCache.set(color, resolved);
+      return resolved;
+    };
 
     const draw = () => {
       frame = 0;
@@ -94,7 +157,7 @@ export function Chart({
       const base = lower ?? 0;
 
       if (lines > 0) {
-        context.strokeStyle = 'rgba(255,255,255,0.06)';
+        context.strokeStyle = resolve('var(--color-chart-grid)');
         context.lineWidth = 1;
         context.beginPath();
         for (let i = 1; i < lines; i += 1) {
@@ -107,6 +170,7 @@ export function Chart({
 
       for (const item of active) {
         const { buffer } = item;
+        const stroke = resolve(item.color);
         const span = Math.max(2, Math.min(windowSize, buffer.capacity));
         const count = Math.min(buffer.length, span);
         if (count < 2) continue;
@@ -118,7 +182,15 @@ export function Chart({
 
         const pointY = (value: number) => clientHeight - ((value - base) / range) * clientHeight;
 
-        if (item.fill) {
+        const fillAlpha =
+          item.fill === true
+            ? DEFAULT_FILL_ALPHA
+            : typeof item.fill === 'number'
+              ? item.fill
+              : null;
+        const fillStyle = fillAlpha === null ? null : withAlpha(stroke, fillAlpha);
+
+        if (fillStyle) {
           context.beginPath();
           let started = false;
           let firstX = 0;
@@ -141,14 +213,15 @@ export function Chart({
             context.lineTo(lastX, clientHeight);
             context.lineTo(firstX, clientHeight);
             context.closePath();
-            context.fillStyle = item.fill;
+            context.fillStyle = fillStyle;
             context.fill();
           }
         }
 
         context.beginPath();
-        context.strokeStyle = item.color;
-        context.lineWidth = 1.5;
+        context.strokeStyle = stroke;
+        context.lineWidth = LINE_WIDTH;
+        context.lineJoin = 'round';
         context.setLineDash(item.dashed ? [4, 3] : []);
         let pendingMove = true;
         for (let i = 0; i < count; i += 1) {

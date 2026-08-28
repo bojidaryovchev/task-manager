@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CollectorConfig, SystemSnapshot } from '@task-manager/telemetry-types';
 import { IpcChannel, type TaskManagerApi } from '@shared/ipc';
+import type { WidgetSettings } from '@shared/widget';
 
 /**
  * The only bridge between the renderer and the main process.
@@ -24,6 +25,33 @@ const api: TaskManagerApi = {
     ipcRenderer.on(IpcChannel.SnapshotEvent, handler);
     return () => {
       ipcRenderer.removeListener(IpcChannel.SnapshotEvent, handler);
+    };
+  },
+
+  queryHistory: (fromUnixMs: number, toUnixMs: number) =>
+    ipcRenderer.invoke(IpcChannel.QueryHistory, fromUnixMs, toUnixMs),
+  getHistoryStatus: () => ipcRenderer.invoke(IpcChannel.GetHistoryStatus),
+  setHistoryEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke(IpcChannel.SetHistoryEnabled, enabled === true),
+
+  getWidgetSettings: () => ipcRenderer.invoke(IpcChannel.GetWidgetSettings),
+  setWidgetSettings: (patch: Partial<WidgetSettings>) =>
+    ipcRenderer.invoke(IpcChannel.SetWidgetSettings, patch),
+  showMainWindow: () => ipcRenderer.invoke(IpcChannel.ShowMainWindow),
+  showWidgetMenu: (x: number, y: number) =>
+    ipcRenderer.invoke(IpcChannel.ShowWidgetMenu, x, y),
+  reportWidgetContentWidth: (width: number) =>
+    ipcRenderer.invoke(
+      IpcChannel.ReportWidgetContentWidth,
+      typeof width === 'number' && Number.isFinite(width) ? width : 0,
+    ),
+  onWidgetSettings: (listener: (settings: WidgetSettings) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, settings: WidgetSettings): void => {
+      listener(settings);
+    };
+    ipcRenderer.on(IpcChannel.WidgetSettingsEvent, handler);
+    return () => {
+      ipcRenderer.removeListener(IpcChannel.WidgetSettingsEvent, handler);
     };
   },
 };

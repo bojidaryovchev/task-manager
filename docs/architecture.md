@@ -7,8 +7,9 @@ each metric means, see [`telemetry.md`](telemetry.md).
 
 ```
 COLLECTION      Windows APIs        native/telemetry/src/win/
-CALCULATION     Rust collectors     native/telemetry/src/{cpu,memory,process}/
+CALCULATION     Rust collectors     native/telemetry/src/{cpu,memory,process,disk,network,gpu,thermal}/
 AGGREGATION     Sampling engine     native/telemetry/src/sampling/
+PERSISTENCE     Tiered history      native/telemetry/src/history/
 TRANSPORT       N-API + IPC         native/telemetry/src/api.rs, apps/desktop/src/{main,preload}/
 PRESENTATION    React               apps/desktop/src/renderer/
 ```
@@ -84,14 +85,151 @@ it with a process-lifetime average would be worse.
 └───────────┬─────────────────────┬───────────────────────────┘
             │ IPC                 │ IPC
    ┌────────▼────────┐   ┌────────▼────────┐
-   │ main window     │   │ desktop widget  │  (planned)
+   │ main window     │   │ desktop widget  │
    │ preload bridge  │   │ preload bridge  │
    └─────────────────┘   └─────────────────┘
 ```
 
-`TelemetryService` is a broadcaster from the outset, even though there is
-currently one window. The tray and the desktop widget attach to the same stream;
-they do not get their own engine and do not compute anything.
+`TelemetryService` is a broadcaster. The main window, the desktop widget and the
+tray all attach to the same stream; none of them gets its own engine and none of
+them computes anything.
+
+## The desktop widget
+
+A second `BrowserWindow` in this same application: frameless, transparent,
+always-on-top, excluded from the taskbar. It loads its own HTML entry rather than
+a route inside the main app, so a 250-pixel window does not pull in the whole
+interface.
+
+**It reads the same snapshots.** The widget's layouts format values the collector
+already produced. There is no widget-side calculation, which is the property that
+makes it impossible for the widget and the main window to disagree.
+
+**Only the layout that needs processes asks for them.** Top consumers subscribes
+to the process list; the other three leave process enumeration switched off
+entirely, which is the difference between a ~35 ms and a ~2 ms sample.
+
+**Placement survives the real world.** Position is persisted as it moves,
+debounced. On restore it is only reused if it still lands on a display that
+exists and leaves enough of the window on-screen to grab; otherwise the widget
+goes back to the primary display's top-right corner. Monitors get unplugged and
+scaling changes move work areas, and a widget you cannot reach is worse than one
+in the wrong place.
+
+**Click-through has a guaranteed way back.** An always-on-top frameless window
+that ignores the mouse cannot be right-clicked, so the tray menu — which is
+built from the same template as the widget's own context menu — can always turn
+it off again.
+
+**The window is sized to its content.** Because it is frameless and transparent,
+a window larger than what is drawn shows as dead space inside the widget's own
+outline, and one smaller clips it. `widgetLayoutSize` derives the size from the
+layout, the number of selected metrics and whether the temperature column is on.
+
+For three of the four layouts that is exact, because they are fixed-width by
+design: their bars and charts need a stable amount of room, and sizing them to
+their text would make the widget breathe every time a value changed width.
+
+The minimal layout is different — its width is whatever its labels and values
+need, and no constant serves both `CPU 5%` and `DISK READ 126 KB/s`. A constant
+tuned to fit the long case wastes 140 pixels on the short one; tuned to the short
+case it clips the long one. So that layout renders at `width: max-content`,
+measures itself with a `ResizeObserver`, and reports the result to main, which
+sizes the window to it. There is no feedback loop precisely because the element
+does not stretch: resizing the window around it cannot change what it measures.
+
+The reported width is clamped in main like any other value crossing the renderer
+boundary. A frameless always-on-top window a few pixels wide cannot be grabbed,
+and one wider than the desktop cannot be moved off it.
+
+## Temperature, and what it is allowed to claim
+
+Three temperature sources are readable without administrator: NVML for NVIDIA
+GPUs, `IOCTL_STORAGE_QUERY_PROPERTY` for drives, and the ACPI thermal zone
+counter set. There is no fourth, and in particular there is no CPU package
+sensor — that needs an MSR read through a kernel-mode driver.
+
+The design problem is not collecting these. It is that they differ enormously in
+how much they can be trusted, and putting three numbers in one column erases
+that difference. So **a reading is a value plus its provenance**, never a bare
+number: the source it came from and the name of the sensor that produced it
+travel with it from Rust all the way to the tooltip.
+
+That single decision settles the rest:
+
+- The GPU and drive readings are joined onto the adapter and the disk they
+  belong to, because their sensors *are* those devices. The join is by PCI
+  vendor/device id and by disk number, both exact. Where the join would be
+  ambiguous — two identical GPUs — no attachment is made at all rather than one
+  made by enumeration order, which nothing documents as meaningful.
+- The ACPI zone is joined to nothing. It is displayed beside CPU, because that
+  is where someone looks for it and because on tested hardware it tracks CPU load
+  within one sample, but it is labelled with its own zone name, marked visually
+  as indirect, and stated in its tooltip not to be a package sensor. It is
+  evidence, and it is presented as evidence.
+- Memory and network get nothing, and "nothing" renders as the same em dash the
+  rest of the application uses for an unmeasured value.
+
+Colour follows the same rule: a reading turns amber only when it is at or above a
+threshold the **vendor** published. NVML supplies throttle and shutdown points;
+most drives report none; ACPI zones expose none through this counter set. A
+sensor that arrived without thresholds is never coloured, because there is
+nothing for it to be above.
+
+The two polled sources carry the age of their measurement rather than hiding it.
+A drive is asked every ten seconds — it has orders of magnitude more thermal mass
+than a die, and each query is an IOCTL to the device — so a reading can be ten
+seconds old, and its tooltip says so.
+
+## One PDH query, one collection
+
+Disk, network, GPU, thermal zones and the two frequency-aware CPU counters all
+come from PDH.
+They share a single query, collected exactly once per interval, because PDH
+derives its rates from the gap between consecutive collections: collecting
+per-subsystem would silently change what every rate meant. A counter set missing
+on a machine simply yields no counter id and its owner reports values as
+unavailable, so a machine with no discrete GPU costs nothing and shows nothing
+rather than zeros.
+
+Measured cost of the whole PDH read, including disk, network, GPU and
+temperature: 0.78 ms per sample, of which the thermal collector is 0.06-0.13 ms.
+
+## History
+
+Persistence lives in the native layer, in SQLite compiled from the bundled
+amalgamation so neither a build nor a shipped binary needs anything installed.
+
+Four retention tiers — every sample for 10 minutes, 5-second means for an hour,
+1-minute means for a day, 5-minute means for a week — around 5400 rows in total,
+so the database stays a few hundred kilobytes however long the application runs.
+
+A tier is **not** built by re-reading and re-aggregating the tier below it, which
+would need bookkeeping to know what had already been rolled up. Each tier keeps
+an in-memory accumulator that every sample is added to; when its window elapses
+it writes one row and resets. Each row is therefore an exact mean over its
+window computed from every sample, not a mean of means.
+
+Peaks are stored beside the means. A five-minute average hides exactly the spike
+a post-hoc question is about.
+
+Reads open their own connection. SQLite in WAL mode lets a reader run without
+blocking the writer, so the UI asking for a week of history never stalls the
+sampler. With history disabled no database is opened and nothing is written —
+the collector's only disk activity.
+
+## Colour and contrast
+
+The palette lives as design tokens in `styles.css`, and `pnpm check:contrast`
+reads those tokens and checks every foreground/background pair the interface
+actually uses against WCAG 2.1 minimums — 4.5:1 for text, 3:1 for graphical
+objects — including the widget composited over a white desktop, its worst case.
+
+Canvas is the sharp edge here. A 2D context silently ignores a colour string it
+cannot parse and keeps whatever it had, so passing `var(--color-cpu)` to
+`strokeStyle` leaves it at the default black and nothing throws. Every colour
+reaching a canvas goes through `resolveColor` in `Chart`, which resolves tokens
+against computed style first.
 
 ## Demand-driven collection
 
@@ -216,6 +354,5 @@ visible in its own process list like anything else.
 | 8 | Network throughput, per-process network, connections |
 | 9 | Tray, desktop widget, settings, autostart |
 
-The desktop widget is a second `BrowserWindow` in this same application, attached
-to the same `TelemetryService` broadcast. It will not implement any telemetry of
-its own — that is the property the architecture exists to protect.
+Milestones 1-9 are implemented. What remains deliberately uncollected — and why —
+is listed at the end of [`telemetry.md`](telemetry.md#not-collected).

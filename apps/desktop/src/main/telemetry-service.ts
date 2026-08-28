@@ -1,10 +1,11 @@
 import { BrowserWindow } from 'electron';
 import type {
   CollectorConfig,
+  HistoryResult,
   HostInfo,
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
-import { IpcChannel, type NativeStatus } from '@shared/ipc';
+import { IpcChannel, type HistoryStatus, type NativeStatus } from '@shared/ipc';
 import { loadNative, type NativeEngine } from './native.js';
 
 /**
@@ -29,6 +30,8 @@ export class TelemetryService {
    * receive it, and when nobody wants it the collector stops gathering it.
    */
   #processSubscribers = new Set<number>();
+  #historyPath: string | null = null;
+  #historyEnabled = false;
 
   constructor() {
     const native = loadNative();
@@ -66,6 +69,39 @@ export class TelemetryService {
     if (!this.#engine) return;
     this.#engine.stop();
     this.#status = { ...this.#status, sampling: false };
+  }
+
+  /**
+   * Turn persistent history on or off.
+   *
+   * History is the only part of the collector that writes to disk, so with it
+   * off no database is opened and nothing is written at all.
+   */
+  setHistory(path: string, enabled: boolean): HistoryStatus {
+    this.#historyPath = path;
+    this.#historyEnabled = enabled;
+    if (enabled) this.#engine?.enableHistory(path);
+    else this.#engine?.disableHistory();
+    return this.historyStatus;
+  }
+
+  get historyStatus(): HistoryStatus {
+    return {
+      enabled: this.#historyEnabled,
+      path: this.#historyPath ?? '',
+      tiers: this.#historyEnabled ? (this.#engine?.historyTiers() ?? []) : [],
+    };
+  }
+
+  queryHistory(fromUnixMs: number, toUnixMs: number): HistoryResult {
+    return (
+      this.#engine?.queryHistory(fromUnixMs, toUnixMs) ?? {
+        points: [],
+        tier: 0,
+        resolutionMs: 0,
+        available: false,
+      }
+    );
   }
 
   /**

@@ -239,6 +239,14 @@ pub struct JsProcessSnapshot {
     pub io_read_bytes_per_second: Option<f64>,
     pub io_write_bytes_per_second: Option<f64>,
 
+    /// Maximum GPU engine utilisation for this process, 0..100. Absent when the
+    /// GPU counter set is unavailable or the process used no GPU.
+    pub gpu_percent: Option<f64>,
+    /// Dedicated (on-board) GPU memory attributed to this process.
+    pub gpu_dedicated_memory_bytes: Option<f64>,
+    /// Shared (system) GPU memory attributed to this process.
+    pub gpu_shared_memory_bytes: Option<f64>,
+
     /// Reason the handle-derived fields are missing, when they are.
     ///
     /// Declared with an explicit TypeScript union so the generated declaration
@@ -273,6 +281,8 @@ pub struct JsCollectionDiagnostics {
     pub cpu_duration_ms: f64,
     pub memory_duration_ms: f64,
     pub process_duration_ms: f64,
+    /// Disk, network and GPU together: they all read from one PDH query.
+    pub device_duration_ms: f64,
     pub issues: Vec<JsCollectorIssue>,
     pub dropped_snapshots: u32,
     /// Number of process identities the collector is tracking, so the
@@ -290,6 +300,10 @@ pub struct JsSystemSnapshot {
     pub cpu: JsCpuSnapshot,
     pub memory: JsMemorySnapshot,
     pub processes: Option<JsProcessesSnapshot>,
+    pub disks: JsDisksSnapshot,
+    pub network: JsNetworkSnapshot,
+    pub gpu: JsGpuSnapshot,
+    pub thermal: JsThermalSnapshot,
     pub diagnostics: JsCollectionDiagnostics,
 }
 
@@ -363,7 +377,7 @@ fn logical_processor_to_js(sample: &LogicalProcessorSample) -> JsLogicalProcesso
 
 pub struct CpuConversionContext<'a> {
     pub topology: JsCpuTopology,
-    pub pdh_counter_paths: &'a [&'static str],
+    pub pdh_counter_paths: &'a [String],
     pub include_debug: bool,
     pub process_count: Option<u32>,
     pub thread_count: Option<u32>,
@@ -412,11 +426,7 @@ pub fn cpu_to_js(sample: &CpuSample, context: CpuConversionContext<'_>) -> JsCpu
             counter_coverage_ratio: sample.debug.counter_coverage_ratio,
             discarded: sample.debug.discarded,
             discard_reason: sample.debug.discard_reason.map(str::to_owned),
-            pdh_counter_paths: context
-                .pdh_counter_paths
-                .iter()
-                .map(|p| (*p).to_owned())
-                .collect(),
+            pdh_counter_paths: context.pdh_counter_paths.to_vec(),
         }),
     }
 }
@@ -529,6 +539,9 @@ fn process_to_js(sample: &ProcessSample) -> JsProcessSnapshot {
         io_other_operations: sample.io_other_operations as f64,
         io_read_bytes_per_second: sample.io_read_bytes_per_second,
         io_write_bytes_per_second: sample.io_write_bytes_per_second,
+        gpu_percent: sample.gpu_percent,
+        gpu_dedicated_memory_bytes: sample.gpu_dedicated_memory_bytes,
+        gpu_shared_memory_bytes: sample.gpu_shared_memory_bytes,
         detail_failure: sample.detail_failure.map(str::to_owned),
     }
 }
@@ -540,5 +553,379 @@ pub fn processes_to_js(sample: &ProcessesSample) -> JsProcessesSnapshot {
         access_denied_count: sample.access_denied_count as u32,
         vanished_count: sample.vanished_count as u32,
         collection_duration_ms: sample.collection_duration_ms,
+    }
+}
+
+// --- disk -------------------------------------------------------------------
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsDiskSnapshot {
+    /// PDH instance name, e.g. `0 C: D:`.
+    pub instance: String,
+    /// Physical disk number, when the instance name carried one.
+    pub index: Option<u32>,
+    /// Drive letters on this physical disk.
+    pub volumes: Vec<String>,
+    pub read_bytes_per_second: f64,
+    pub write_bytes_per_second: f64,
+    pub total_bytes_per_second: f64,
+    /// `100 - % Idle Time`, the basis Task Manager uses for "Active time".
+    pub active_time_percent: Option<f64>,
+    pub average_read_latency_ms: Option<f64>,
+    pub average_write_latency_ms: Option<f64>,
+    pub queue_length: Option<f64>,
+    pub reads_per_second: Option<f64>,
+    pub writes_per_second: Option<f64>,
+    /// The drive's own sensor. Absent for the `_Total` aggregate and for any
+    /// device that does not implement the temperature property.
+    pub temperature: Option<JsTemperatureReading>,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsDisksSnapshot {
+    pub disks: Vec<JsDiskSnapshot>,
+    /// The `_Total` instance PDH synthesises, when present.
+    pub total: Option<JsDiskSnapshot>,
+    /// True when the PhysicalDisk counter set could not be registered.
+    pub unavailable: bool,
+}
+
+// --- network ----------------------------------------------------------------
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsNetworkInterfaceSnapshot {
+    pub name: String,
+    pub received_bytes_per_second: f64,
+    pub sent_bytes_per_second: f64,
+    pub total_bytes_per_second: f64,
+    pub link_speed_bits_per_second: Option<f64>,
+    pub received_packets_per_second: Option<f64>,
+    pub sent_packets_per_second: Option<f64>,
+    pub outbound_discards_per_second: Option<f64>,
+    pub is_loopback: bool,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsNetworkSnapshot {
+    pub interfaces: Vec<JsNetworkInterfaceSnapshot>,
+    /// Summed over non-loopback interfaces.
+    pub received_bytes_per_second: f64,
+    pub sent_bytes_per_second: f64,
+    pub unavailable: bool,
+}
+
+// --- gpu --------------------------------------------------------------------
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsGpuEngineSnapshot {
+    /// Raw engine type from the counter, e.g. `3d`, `videodecode`.
+    pub engine: String,
+    /// Friendlier label for the same engine.
+    pub label: String,
+    pub utilisation_percent: f64,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsGpuAdapterSnapshot {
+    /// LUID key matching the PDH instance names, e.g. `0x00000000_0x000194b3`.
+    pub luid: String,
+    /// Adapter description from DXGI, absent when DXGI could not enumerate.
+    pub name: Option<String>,
+    pub is_software: bool,
+    /// Maximum across engine types - never a sum, because engines run concurrently.
+    pub utilisation_percent: Option<f64>,
+    pub engines: Vec<JsGpuEngineSnapshot>,
+    pub dedicated_memory_used_bytes: Option<f64>,
+    pub dedicated_memory_total_bytes: Option<f64>,
+    pub shared_memory_used_bytes: Option<f64>,
+    pub shared_memory_total_bytes: Option<f64>,
+    /// Die temperature, when a vendor library reported one for this adapter.
+    pub temperature: Option<JsTemperatureReading>,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsGpuSnapshot {
+    pub adapters: Vec<JsGpuAdapterSnapshot>,
+    /// True when the GPU counter sets could not be registered.
+    pub unavailable: bool,
+}
+
+pub fn disks_to_js(sample: &crate::disk::DisksSample) -> JsDisksSnapshot {
+    JsDisksSnapshot {
+        disks: sample.disks.iter().map(disk_to_js).collect(),
+        total: sample.total.as_ref().map(disk_to_js),
+        unavailable: sample.unavailable,
+    }
+}
+
+fn disk_to_js(sample: &crate::disk::DiskSample) -> JsDiskSnapshot {
+    JsDiskSnapshot {
+        instance: sample.instance.clone(),
+        index: sample.index,
+        volumes: sample.volumes.clone(),
+        read_bytes_per_second: sample.read_bytes_per_second,
+        write_bytes_per_second: sample.write_bytes_per_second,
+        total_bytes_per_second: sample.total_bytes_per_second,
+        active_time_percent: sample.active_time_percent,
+        average_read_latency_ms: sample.average_read_latency_ms,
+        average_write_latency_ms: sample.average_write_latency_ms,
+        queue_length: sample.queue_length,
+        reads_per_second: sample.reads_per_second,
+        writes_per_second: sample.writes_per_second,
+        temperature: sample.temperature.as_ref().map(temperature_to_js),
+    }
+}
+
+pub fn network_to_js(sample: &crate::network::NetworkSample) -> JsNetworkSnapshot {
+    JsNetworkSnapshot {
+        interfaces: sample
+            .interfaces
+            .iter()
+            .map(|item| JsNetworkInterfaceSnapshot {
+                name: item.name.clone(),
+                received_bytes_per_second: item.received_bytes_per_second,
+                sent_bytes_per_second: item.sent_bytes_per_second,
+                total_bytes_per_second: item.total_bytes_per_second,
+                link_speed_bits_per_second: item.link_speed_bits_per_second,
+                received_packets_per_second: item.received_packets_per_second,
+                sent_packets_per_second: item.sent_packets_per_second,
+                outbound_discards_per_second: item.outbound_discards_per_second,
+                is_loopback: item.is_loopback,
+            })
+            .collect(),
+        received_bytes_per_second: sample.received_bytes_per_second,
+        sent_bytes_per_second: sample.sent_bytes_per_second,
+        unavailable: sample.unavailable,
+    }
+}
+
+pub fn gpu_to_js(sample: &crate::gpu::GpuSample) -> JsGpuSnapshot {
+    JsGpuSnapshot {
+        adapters: sample
+            .adapters
+            .iter()
+            .map(|adapter| JsGpuAdapterSnapshot {
+                luid: adapter.luid.clone(),
+                name: adapter.name.clone(),
+                is_software: adapter.is_software,
+                utilisation_percent: adapter.utilisation_percent,
+                engines: adapter
+                    .engines
+                    .iter()
+                    .map(|engine| JsGpuEngineSnapshot {
+                        label: crate::gpu::engine_label(&engine.engine).to_string(),
+                        engine: engine.engine.clone(),
+                        utilisation_percent: engine.utilisation_percent,
+                    })
+                    .collect(),
+                dedicated_memory_used_bytes: adapter.dedicated_memory_used_bytes,
+                dedicated_memory_total_bytes: adapter
+                    .dedicated_memory_total_bytes
+                    .map(|value| value as f64),
+                shared_memory_used_bytes: adapter.shared_memory_used_bytes,
+                shared_memory_total_bytes: adapter
+                    .shared_memory_total_bytes
+                    .map(|value| value as f64),
+                temperature: adapter.temperature.as_ref().map(temperature_to_js),
+            })
+            .collect(),
+        unavailable: sample.unavailable,
+    }
+}
+
+// --- thermal ----------------------------------------------------------------
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsTemperatureReading {
+    pub celsius: f64,
+    /// The source is what says how much the number can be trusted, so it
+    /// travels with every reading.
+    ///
+    /// Declared with an explicit `ts_type` so the generated declarations carry
+    /// the same union the published types do. A napi string enum would generate
+    /// a TypeScript `enum`, and a string literal is not assignable to an enum
+    /// member, which would break the bidirectional contract check in
+    /// `native-contract.ts` in one direction only - the worst kind of drift.
+    #[napi(ts_type = "'acpiThermalZone' | 'nvml' | 'storageDevice'")]
+    pub source: String,
+    /// Exactly what reported it - an ACPI zone name, a GPU board name, a drive
+    /// model. Never a category such as "CPU".
+    pub sensor: String,
+    /// Where the vendor says throttling begins, when it publishes a threshold.
+    pub warning_celsius: Option<f64>,
+    /// Where the vendor says the device is in danger, when it publishes one.
+    pub critical_celsius: Option<f64>,
+    /// Age of the measurement. Zero for zone counters, read every sample; up to
+    /// the source's refresh interval for the ones polled more slowly.
+    pub measured_ago_ms: f64,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsThermalZoneSnapshot {
+    /// The zone's ACPI name, e.g. `\_TZ.TZ01`.
+    pub instance: String,
+    pub celsius: f64,
+    /// True when the value came from `High Precision Temperature`.
+    pub high_precision: bool,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsThermalSnapshot {
+    /// Every ACPI zone reporting a physically plausible value, hottest first.
+    pub zones: Vec<JsThermalZoneSnapshot>,
+    /// The hottest zone as a reading. **Not a CPU package temperature**: what an
+    /// ACPI zone is attached to is defined by the system firmware, so it is
+    /// always presented under its own zone name.
+    pub primary_zone: Option<JsTemperatureReading>,
+    /// Every GPU a vendor library reported, whether or not it could be joined to
+    /// an adapter.
+    pub gpus: Vec<JsTemperatureReading>,
+    /// Every drive that reports a temperature.
+    pub drives: Vec<JsTemperatureReading>,
+    /// True when the `Thermal Zone Information` counter set is absent, which is
+    /// normal on a machine whose firmware declares no zones.
+    pub zones_unavailable: bool,
+    /// True when no NVIDIA driver is present. Not an error.
+    pub nvml_unavailable: bool,
+}
+
+pub fn temperature_to_js(reading: &crate::thermal::TemperatureReading) -> JsTemperatureReading {
+    JsTemperatureReading {
+        celsius: reading.celsius,
+        source: reading.source.as_str().to_string(),
+        sensor: reading.sensor.clone(),
+        warning_celsius: reading.warning_celsius,
+        critical_celsius: reading.critical_celsius,
+        measured_ago_ms: reading.measured_ago_ms,
+    }
+}
+
+pub fn thermal_to_js(sample: &crate::thermal::ThermalSample) -> JsThermalSnapshot {
+    JsThermalSnapshot {
+        zones: sample
+            .zones
+            .iter()
+            .map(|zone| JsThermalZoneSnapshot {
+                instance: zone.instance.clone(),
+                celsius: zone.celsius,
+                high_precision: zone.high_precision,
+            })
+            .collect(),
+        primary_zone: crate::thermal::primary_zone_reading(sample)
+            .as_ref()
+            .map(temperature_to_js),
+        gpus: sample
+            .gpus
+            .iter()
+            .map(|gpu| JsTemperatureReading {
+                celsius: gpu.celsius,
+                source: crate::thermal::TemperatureSource::Nvml.as_str().to_string(),
+                sensor: gpu.name.clone(),
+                warning_celsius: gpu.slowdown_celsius,
+                critical_celsius: gpu.shutdown_celsius,
+                measured_ago_ms: gpu.measured_ago_ms,
+            })
+            .collect(),
+        drives: sample
+            .drives
+            .iter()
+            .map(|drive| JsTemperatureReading {
+                celsius: drive.celsius,
+                source: crate::thermal::TemperatureSource::StorageDevice
+                    .as_str()
+                    .to_string(),
+                sensor: drive
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| format!("PhysicalDrive{}", drive.drive_index)),
+                warning_celsius: drive.warning_celsius,
+                critical_celsius: drive.critical_celsius,
+                measured_ago_ms: drive.measured_ago_ms,
+            })
+            .collect(),
+        zones_unavailable: sample.zones_unavailable,
+        nvml_unavailable: sample.nvml_unavailable,
+    }
+}
+
+// --- history ----------------------------------------------------------------
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsHistoryPoint {
+    pub timestamp_unix_ms: f64,
+    pub cpu_time_percent: Option<f64>,
+    pub cpu_utility_percent: Option<f64>,
+    pub cpu_busiest_percent: Option<f64>,
+    pub memory_used_bytes: Option<f64>,
+    pub memory_available_bytes: Option<f64>,
+    pub memory_committed_bytes: Option<f64>,
+    pub disk_read_bytes_per_second: Option<f64>,
+    pub disk_write_bytes_per_second: Option<f64>,
+    pub disk_active_percent: Option<f64>,
+    pub network_down_bytes_per_second: Option<f64>,
+    pub network_up_bytes_per_second: Option<f64>,
+    pub gpu_percent: Option<f64>,
+    pub gpu_memory_bytes: Option<f64>,
+    pub process_count: Option<f64>,
+    pub thread_count: Option<f64>,
+    pub handle_count: Option<f64>,
+    /// Peak within the window, which a mean would otherwise hide.
+    pub cpu_time_peak_percent: Option<f64>,
+    pub memory_used_peak_bytes: Option<f64>,
+    pub disk_total_peak_bytes_per_second: Option<f64>,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsHistoryTier {
+    pub tier: u32,
+    pub row_count: u32,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsHistoryResult {
+    pub points: Vec<JsHistoryPoint>,
+    /// Which retention tier answered the query.
+    pub tier: u32,
+    /// Nominal resolution of that tier, in milliseconds.
+    pub resolution_ms: f64,
+    /// False when history is disabled or the database could not be opened.
+    pub available: bool,
+}
+
+pub fn history_point_to_js(point: &crate::history::HistoryPoint) -> JsHistoryPoint {
+    JsHistoryPoint {
+        timestamp_unix_ms: point.timestamp_unix_ms,
+        cpu_time_percent: point.sample.cpu_time_percent,
+        cpu_utility_percent: point.sample.cpu_utility_percent,
+        cpu_busiest_percent: point.sample.cpu_busiest_percent,
+        memory_used_bytes: point.sample.memory_used_bytes,
+        memory_available_bytes: point.sample.memory_available_bytes,
+        memory_committed_bytes: point.sample.memory_committed_bytes,
+        disk_read_bytes_per_second: point.sample.disk_read_bytes_per_second,
+        disk_write_bytes_per_second: point.sample.disk_write_bytes_per_second,
+        disk_active_percent: point.sample.disk_active_percent,
+        network_down_bytes_per_second: point.sample.network_down_bytes_per_second,
+        network_up_bytes_per_second: point.sample.network_up_bytes_per_second,
+        gpu_percent: point.sample.gpu_percent,
+        gpu_memory_bytes: point.sample.gpu_memory_bytes,
+        process_count: point.sample.process_count,
+        thread_count: point.sample.thread_count,
+        handle_count: point.sample.handle_count,
+        cpu_time_peak_percent: point.cpu_time_peak_percent,
+        memory_used_peak_bytes: point.memory_used_peak_bytes,
+        disk_total_peak_bytes_per_second: point.disk_total_peak_bytes_per_second,
     }
 }

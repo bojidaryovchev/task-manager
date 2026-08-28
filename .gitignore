@@ -9,3 +9,4 @@ target/
 .vite/
 coverage/
 *.tsbuildinfo
+.napi-rs-filesystem-transaction.swp/

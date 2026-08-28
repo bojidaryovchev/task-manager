@@ -70,7 +70,7 @@ export function MemoryPage(): React.JSX.Element {
                 {
                   buffer: telemetryStore.system.get('memoryUsedBytes'),
                   color: 'var(--color-memory)',
-                  fill: 'rgba(169,112,255,0.14)',
+                  fill: true,
                 },
               ]}
             />

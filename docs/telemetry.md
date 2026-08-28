@@ -538,6 +538,159 @@ well under the budget.
 
 ---
 
+## Temperature
+
+Windows has no general "CPU temperature" API. Exactly three sources are readable
+by an unelevated process, and the collector reports those three and nothing
+else. They differ enormously in how much they can be trusted, so **every reading
+carries its source and the name of the sensor that produced it**, and the UI
+shows that name rather than a category label.
+
+| Source | What it measures | Elevation | Refresh |
+|---|---|---|---|
+| NVML | An NVIDIA GPU's own die sensor | none | 1 s |
+| `IOCTL_STORAGE_QUERY_PROPERTY` | A drive's own SMART/health sensor | none | 10 s |
+| `Thermal Zone Information` (PDH) | An ACPI zone declared by system firmware | none | every sample |
+
+### Metric: GPU temperature
+
+**Source:** `nvmlDeviceGetTemperature(device, NVML_TEMPERATURE_GPU)`.
+
+**Definition:** the temperature of the GPU die, as the board's own sensor
+measures it. NVML is the library `nvidia-smi` is built on, and the vendor
+documents what the sensor is, so this needs no interpretation.
+
+`nvml.dll` ships with the NVIDIA display driver. It is resolved with
+`LoadLibraryW`/`GetProcAddress` rather than linked, so its absence on an AMD or
+Intel machine costs nothing and cannot stop the native module loading.
+
+**Joined to an adapter by PCI vendor and device id.** NVML's `pciDeviceId` packs
+the same pair DXGI reports as `VendorId` and `DeviceId`. The join is made **only
+when that pair identifies exactly one NVML device and exactly one adapter**. Two
+identical boards in one machine share a device id, and nothing documents NVML's
+enumeration order as corresponding to DXGI's, so matching them by position could
+show one card's temperature against the other. Ambiguous cases leave the adapter
+without a temperature; the readings still appear in `thermal.gpus` under the
+names NVML gave them.
+
+**Thresholds** come from `nvmlDeviceGetTemperatureThreshold`: `SLOWDOWN` is
+reported as the warning level and `SHUTDOWN` as the critical level. These are the
+only thresholds anything in this application colours against.
+
+**No AMD or Intel equivalent.** Neither publishes GPU temperature through a
+Windows API or a PDH counter set, and ADLX and IGCL are SDK distributions rather
+than components present on an end-user machine. Those adapters report no
+temperature.
+
+### Metric: Drive temperature
+
+**Source:** `DeviceIoControl(IOCTL_STORAGE_QUERY_PROPERTY)` with
+`StorageDeviceTemperatureProperty`, returning a
+`STORAGE_TEMPERATURE_DATA_DESCRIPTOR`.
+
+**Definition:** the drive's own sensor — for NVMe the controller's composite
+temperature from the health log page, for SATA the SMART temperature attribute.
+When a device publishes several sensors the hottest of them is reported.
+
+**Why it works unelevated.** `CreateFileW` is called with `dwDesiredAccess = 0`,
+which asks for neither read nor write access to the device's data, only the right
+to issue query IOCTLs. Opening with `GENERIC_READ` would require administrator
+and fail for a standard user.
+
+**Joined to a disk by disk number**, which is exact: `\\.\PhysicalDriveN` and the
+`PhysicalDisk` counter instance `N C: D:` use the same number. Verified against
+`Get-PhysicalDisk` on the development machine — disk 0 is `NVMe HFS001TFM9X186N`
+carrying `D:`, disk 1 is `NVMe HFS002TEJ9X125N` carrying `C:`, and both the model
+strings and the letters match what the collector reports. The synthesised
+`_Total` instance never carries a temperature: an aggregate has none.
+
+**Devices that do not implement it report nothing.** Observed failures include
+`ERROR_INVALID_PARAMETER` from drivers with no temperature page and
+`ERROR_IO_DEVICE` from a card reader with no media. A device that fails once is
+not asked again. On the development machine the two internal NVMe drives report
+and the two USB-bridged external drives do not, because the bridge does not pass
+the property through.
+
+`STORAGE_TEMPERATURE_VALUE_NOT_REPORTED` (`0x8000`, read back through a signed
+field as −32768) means absent. Zero is **not** treated as absent: the fields are
+signed precisely because a drive can legitimately be at or below 0 °C.
+
+### Metric: Thermal zone
+
+**Source:** `\Thermal Zone Information(*)\High Precision Temperature`, in tenths
+of a Kelvin, falling back to `\Thermal Zone Information(*)\Temperature` in whole
+Kelvin. Same sensor, two resolutions.
+
+**Definition:** the temperature of an ACPI thermal zone — a region the system
+firmware declares, whose `_TMP` method Windows evaluates.
+
+**What it is not.** It is not a CPU package temperature and is never labelled as
+one. What a zone is physically attached to is decided by the machine's firmware
+and is documented neither by ACPI nor by Windows. A zone called `\_TZ.TZ01` on
+one machine and one on another need have nothing in common.
+
+**What was measured here.** Sampling `\_TZ.TZ01` on the development machine
+through an idle → 24-thread load → cooldown cycle:
+
+```
+baseline   cpu=  5-24%   65 - 83 C, drifting down
+load       cpu= 92-100%  102 - 105 C, reached within one sample
+cooldown   cpu=  4-15%   back to 65 - 75 C within seconds
+```
+
+It tracks CPU load essentially instantaneously. Thermal mass that responds that
+fast is a die, not a chassis probe. That is **evidence, not documentation**, so
+the value is surfaced under its own zone name everywhere it appears, marked with
+a dotted underline in the widget, and explained in a tooltip and on the CPU page.
+
+Two readings taken seconds apart appear to disagree — `Temperature` said 90.9 °C
+while `High Precision Temperature` said 98.05 °C — but that is an artefact of
+reading the two counters in separate calls on a signal moving about 10 °C per
+second. Read together inside one PDH collection, under steady load, they agree to
+within 1–2 °C. The high-precision counter is preferred where present.
+
+A reading is only reported when it falls between 200 K and 500 K. Firmware with
+nothing to report commonly publishes 0, which would otherwise display as
+−273 °C. The window is wide because it exists to reject non-readings, not to
+judge which real temperatures are plausible.
+
+### Why there is no CPU package temperature
+
+The only route to a true package sensor is an MSR read — Intel's
+`IA32_THERM_STATUS`, or AMD's SMU — and user mode cannot execute `RDMSR`.
+Reaching it needs a signed kernel-mode driver, which means an installer and
+administrator rights. This application ships as a single `asInvoker` executable
+that installs nothing, so a package sensor is not offered at all rather than
+approximated from something else.
+
+Three further sources were checked on real hardware and rejected:
+
+| Checked | Result |
+|---|---|
+| `MSAcpi_ThermalZoneTemperature` (WMI `root\WMI`) | Access denied without administrator. Exposes the same ACPI data as the PDH counter set, which needs no elevation. |
+| `Win32_TemperatureProbe` | No instances. The SMBIOS class is unpopulated on ordinary hardware. |
+| `Get-StorageReliabilityCounter` | "No reliability counters" on all four drives, and it needs administrator besides. |
+
+### Why there is no memory temperature
+
+Memory module temperature comes from SPD hub sensors on the SMBus. No Windows
+API exposes the SMBus, so there is nothing to read. Memory metrics show an em
+dash in the widget's temperature column — the same convention used everywhere
+else for "not measured" — rather than being given a number from somewhere else.
+
+### Staleness is carried, not hidden
+
+The zone counters ride on the engine's shared PDH query and are read on every
+sample, so their age is zero. NVML and the storage IOCTL are real device
+round-trips, so each has its own refresh interval and every reading carries
+`measuredAgoMs`. A drive temperature up to ten seconds old is shown as such in
+its tooltip rather than presented as instantaneous.
+
+**Cost.** The whole thermal collector measures 0.06–0.13 ms per sample, inside
+the 0.78 ms the disk, network, GPU and temperature subsystems take together.
+
+---
+
 ## Collector self-measurement
 
 A resource monitor that cannot account for its own cost is not trustworthy.
@@ -678,8 +831,16 @@ aggregate would make the numbers agree and make them wrong.
 
 ---
 
-## Not yet collected
+## Not collected
 
 These are deliberately absent from the UI rather than shown as zero or estimated:
-GPU, VRAM, disk throughput, disk latency, network throughput, per-process disk and
-network attribution, file-level I/O attribution, persistent history.
+
+| Not collected | Why |
+|---|---|
+| Per-process disk I/O | Windows' per-process I/O counters cover file, network, device and pipe I/O together, so a process streaming from a socket would appear to be using the disk. Real attribution needs ETW. |
+| Per-process network I/O | Same reason. Needs ETW. |
+| File-level I/O attribution | Needs ETW. |
+| Per-process history | The history engine stores machine-wide series only. |
+| CPU package temperature | Needs an MSR read through a kernel-mode driver. See [Temperature](#why-there-is-no-cpu-package-temperature). |
+| Memory module temperature | Behind the SMBus, with no Windows API in front of it. |
+| AMD and Intel GPU temperature | Published through neither a Windows API nor a counter set. |

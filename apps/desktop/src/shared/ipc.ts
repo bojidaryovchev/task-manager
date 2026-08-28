@@ -1,4 +1,11 @@
-import type { CollectorConfig, HostInfo, SystemSnapshot } from '@task-manager/telemetry-types';
+import type {
+  CollectorConfig,
+  HistoryResult,
+  HistoryTier,
+  HostInfo,
+  SystemSnapshot,
+} from '@task-manager/telemetry-types';
+import type { WidgetSettings } from './widget.js';
 
 /**
  * The complete IPC surface. Channels are constants so main and preload cannot
@@ -20,9 +27,38 @@ export const IpcChannel = {
   SetProcessSubscription: 'telemetry:setProcessSubscription',
   /** main -> renderer push: SystemSnapshot */
   SnapshotEvent: 'telemetry:snapshot',
+
+  /** invoke: () => WidgetSettings */
+  GetWidgetSettings: 'widget:getSettings',
+  /** invoke: (patch: Partial<WidgetSettings>) => WidgetSettings */
+  SetWidgetSettings: 'widget:setSettings',
+  /** invoke: () => void — open the main window and focus it */
+  ShowMainWindow: 'widget:showMainWindow',
+  /** invoke: (x, y) => void — show the widget context menu at a screen point */
+  ShowWidgetMenu: 'widget:showMenu',
+  /** main -> renderer push: WidgetSettings */
+  WidgetSettingsEvent: 'widget:settings',
+  /** invoke: (width: number) => void - the widget's measured natural width */
+  ReportWidgetContentWidth: 'widget:contentWidth',
+
+  /** invoke: (fromUnixMs, toUnixMs) => HistoryResult */
+  QueryHistory: 'history:query',
+  /** invoke: () => HistoryStatus */
+  GetHistoryStatus: 'history:getStatus',
+  /** invoke: (enabled: boolean) => HistoryStatus */
+  SetHistoryEnabled: 'history:setEnabled',
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
+
+/** Where history is stored and whether it is running. */
+export interface HistoryStatus {
+  enabled: boolean;
+  /** Absolute path of the database, so the UI can say where the data lives. */
+  path: string;
+  /** Rows currently held per retention tier. */
+  tiers: HistoryTier[];
+}
 
 /** Reported when the native module could not be loaded, so the UI can say so. */
 export interface NativeStatus {
@@ -52,4 +88,32 @@ export interface TaskManagerApi {
   setProcessSubscription(wanted: boolean): Promise<void>;
   /** Subscribe to the canonical snapshot stream. Returns an unsubscribe function. */
   onSnapshot(listener: (snapshot: SystemSnapshot) => void): () => void;
+
+  // --- desktop widget ------------------------------------------------------
+  getWidgetSettings(): Promise<WidgetSettings>;
+  /** Apply a partial change. Returns the settings as they ended up after validation. */
+  setWidgetSettings(patch: Partial<WidgetSettings>): Promise<WidgetSettings>;
+  /** Bring the main window to the front, creating it if it was closed. */
+  showMainWindow(): Promise<void>;
+  /** Open the widget's context menu at a point in screen coordinates. */
+  showWidgetMenu(x: number, y: number): Promise<void>;
+  /** Subscribe to widget settings changes. Returns an unsubscribe function. */
+  onWidgetSettings(listener: (settings: WidgetSettings) => void): () => void;
+  /**
+   * Report the widget's measured natural content width, in CSS pixels.
+   *
+   * Only the minimal layout uses this. Its width depends on the labels and
+   * values it happens to be showing, and no constant can be right for both
+   * "CPU 5%" and "DISK READ 126 KB/s" — one wastes space, the other clips. Main
+   * sizes that layout's window to what the renderer measured; the fixed-width
+   * layouts ignore it.
+   */
+  reportWidgetContentWidth(width: number): Promise<void>;
+
+  // --- history -------------------------------------------------------------
+  /** Read a window of history. The finest tier covering the span answers it. */
+  queryHistory(fromUnixMs: number, toUnixMs: number): Promise<HistoryResult>;
+  getHistoryStatus(): Promise<HistoryStatus>;
+  /** Turn recording on or off. With it off nothing is written to disk. */
+  setHistoryEnabled(enabled: boolean): Promise<HistoryStatus>;
 }

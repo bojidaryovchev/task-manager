@@ -3,8 +3,9 @@
 //! Layout mirrors the pipeline:
 //!
 //! * `win` - raw Windows API access, the only place `unsafe` appears.
-//! * `cpu`, `memory`, `process` - collection and calculation, one module per
-//!   subsystem, each owning the previous-sample state its rates need.
+//! * `cpu`, `memory`, `process`, `disk`, `network`, `gpu`, `thermal` - collection and
+//!   calculation, one module per subsystem, each owning the previous-sample
+//!   state its rates need.
 //! * `sampling` - the single engine that drives every collector on one cadence.
 //! * `api` - the N-API transport structures and conversions.
 //!
@@ -17,20 +18,28 @@
 pub mod api;
 pub mod clock;
 pub mod cpu;
+pub mod disk;
+pub mod gpu;
+pub mod history;
 pub mod host;
 pub mod memory;
+pub mod network;
 pub mod process;
 pub mod sampling;
+pub mod thermal;
 pub mod win;
 
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 
-use crate::api::{JsCollectorConfig, JsHostInfo, JsSystemSnapshot};
+use crate::api::{
+    history_point_to_js, JsCollectorConfig, JsHistoryResult, JsHistoryTier, JsHostInfo,
+    JsSystemSnapshot,
+};
 use crate::sampling::engine::{run_loop, EngineState, DEFAULT_INTERVAL_MS};
 
 /// Callback invoked once per sampling interval with a complete snapshot.
@@ -44,6 +53,12 @@ type SnapshotCallback = ThreadsafeFunction<JsSystemSnapshot, (), JsSystemSnapsho
 pub struct TelemetryEngine {
     state: Arc<EngineState>,
     thread: Option<std::thread::JoinHandle<()>>,
+    /// Read-only handle onto the history database, for queries from JavaScript.
+    ///
+    /// A separate connection from the sampling thread's writer: SQLite in WAL
+    /// mode lets a reader run without blocking the writer, which is exactly what
+    /// is needed when the UI asks for a week of history mid-sample.
+    history_path: Arc<Mutex<Option<String>>>,
 }
 
 #[napi]
@@ -54,7 +69,90 @@ impl TelemetryEngine {
         Self {
             state: Arc::new(EngineState::new(&config)),
             thread: None,
+            history_path: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Enable persistent history, writing to `path`.
+    ///
+    /// Nothing is created and nothing is written until this is called: a run
+    /// with history off must not touch the disk on the collector's account.
+    #[napi]
+    pub fn enable_history(&mut self, path: String) {
+        if let Ok(mut guard) = self.state.history_path.lock() {
+            *guard = Some(path.clone());
+        }
+        if let Ok(mut guard) = self.history_path.lock() {
+            *guard = Some(path);
+        }
+    }
+
+    /// Turn history off. Existing rows are left on disk.
+    #[napi]
+    pub fn disable_history(&mut self) {
+        if let Ok(mut guard) = self.state.history_path.lock() {
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.history_path.lock() {
+            *guard = None;
+        }
+    }
+
+    /// Read a window of history, choosing the finest tier that covers the span.
+    ///
+    /// Opens its own read-only connection rather than sharing the sampling
+    /// thread's: WAL mode means this cannot block a write, so the UI asking for
+    /// a week of data never stalls the sampler.
+    #[napi]
+    pub fn query_history(&self, from_unix_ms: f64, to_unix_ms: f64) -> JsHistoryResult {
+        let path = self
+            .history_path
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        let tier = history::tier_for_span((to_unix_ms - from_unix_ms).max(0.0));
+        let empty = JsHistoryResult {
+            points: Vec::new(),
+            tier: u32::from(tier),
+            resolution_ms: history::tier_resolution_ms(tier),
+            available: false,
+        };
+        let Some(path) = path else { return empty };
+        let Ok(store) = history::HistoryStore::open(std::path::Path::new(&path)) else {
+            return empty;
+        };
+        JsHistoryResult {
+            points: store
+                .query(from_unix_ms, to_unix_ms)
+                .iter()
+                .map(history_point_to_js)
+                .collect(),
+            tier: u32::from(tier),
+            resolution_ms: history::tier_resolution_ms(tier),
+            available: true,
+        }
+    }
+
+    /// Rows currently stored per tier, for the debug view.
+    #[napi]
+    pub fn history_tiers(&self) -> Vec<JsHistoryTier> {
+        let path = self
+            .history_path
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        let Some(path) = path else { return Vec::new() };
+        let Ok(store) = history::HistoryStore::open(std::path::Path::new(&path)) else {
+            return Vec::new();
+        };
+        store
+            .row_counts()
+            .into_iter()
+            .map(|(tier, row_count)| JsHistoryTier {
+                tier: u32::from(tier),
+                row_count,
+            })
+            .collect()
     }
 
     /// Start sampling. `on_snapshot` is called on the JavaScript thread once per

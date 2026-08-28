@@ -17,6 +17,7 @@ features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Storage_FileSystem",
+  "Win32_System_IO",
   "Win32_Storage_Packaging_Appx",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_LibraryLoader",
@@ -29,6 +30,12 @@ features = [
   "Win32_System_Threading",
   "Win32_System_WindowsProgramming",
 ]
+
+# SQLite, compiled from the bundled amalgamation so a build needs no system
+# library and a shipped binary needs nothing installed on the user's machine.
+[dependencies.rusqlite]
+version = "0.37"
+features = ["bundled"]
 
 [build-dependencies]
 napi-build = "2"

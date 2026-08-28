@@ -85,6 +85,12 @@ pub struct ProcessSample {
     pub io_read_bytes_per_second: Option<f64>,
     pub io_write_bytes_per_second: Option<f64>,
 
+    // GPU usage, joined in by the engine from the GPU counter set. Absent when
+    // that counter set is unavailable or the process touched no GPU.
+    pub gpu_percent: Option<f64>,
+    pub gpu_dedicated_memory_bytes: Option<f64>,
+    pub gpu_shared_memory_bytes: Option<f64>,
+
     // Static per-process facts, resolved lazily and cached.
     pub image_path: Option<String>,
     pub command_line: Option<String>,
@@ -234,6 +240,9 @@ impl ProcessCollector {
                 io_other_operations: info.other_operation_count.max(0) as u64,
                 io_read_bytes_per_second: None,
                 io_write_bytes_per_second: None,
+                gpu_percent: None,
+                gpu_dedicated_memory_bytes: None,
+                gpu_shared_memory_bytes: None,
                 image_path: None,
                 command_line: None,
                 user_name: None,
@@ -358,6 +367,28 @@ impl ProcessCollector {
             access_denied_count,
             vanished_count: 0,
             collection_duration_ms: started.elapsed().as_secs_f64() * 1000.0,
+        }
+    }
+
+    /// Attach GPU usage to the processes in a sample.
+    ///
+    /// Kept separate from `sample` because the GPU counters come from the
+    /// engine's shared PDH query rather than from this collector, and because a
+    /// machine with no GPU counter set should cost nothing here.
+    pub fn attach_gpu(
+        sample: &mut ProcessesSample,
+        by_process: &std::collections::HashMap<u32, crate::gpu::ProcessGpuUsage>,
+    ) {
+        if by_process.is_empty() {
+            return;
+        }
+        for process in &mut sample.processes {
+            let Some(usage) = by_process.get(&process.pid) else {
+                continue;
+            };
+            process.gpu_percent = Some(usage.utilisation_percent);
+            process.gpu_dedicated_memory_bytes = Some(usage.dedicated_memory_bytes);
+            process.gpu_shared_memory_bytes = Some(usage.shared_memory_bytes);
         }
     }
 

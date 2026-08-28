@@ -17,11 +17,15 @@
 
 import type {
   JsCollectorConfig,
+  JsHistoryPoint,
+  JsHistoryResult,
   JsHostInfo,
   JsSystemSnapshot,
 } from '@task-manager/telemetry-native';
 import type {
   CollectorConfig,
+  HistoryPoint,
+  HistoryResult,
   HostInfo,
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
@@ -38,5 +42,10 @@ type _ConfigIsDescribed = AssignableTo<JsCollectorConfig, CollectorConfig>;
 type _SnapshotIsProduced = AssignableTo<SystemSnapshot, JsSystemSnapshot>;
 type _HostInfoIsProduced = AssignableTo<HostInfo, JsHostInfo>;
 type _ConfigIsProduced = AssignableTo<CollectorConfig, JsCollectorConfig>;
+
+type _HistoryPointIsDescribed = AssignableTo<JsHistoryPoint, HistoryPoint>;
+type _HistoryPointIsProduced = AssignableTo<HistoryPoint, JsHistoryPoint>;
+type _HistoryResultIsDescribed = AssignableTo<JsHistoryResult, HistoryResult>;
+type _HistoryResultIsProduced = AssignableTo<HistoryResult, JsHistoryResult>;
 
 export {};

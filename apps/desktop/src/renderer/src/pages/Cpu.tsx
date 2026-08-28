@@ -21,7 +21,7 @@ export function CpuPage(): React.JSX.Element {
                 {
                   buffer: telemetryStore.system.get('cpuTimeUtilization'),
                   color: 'var(--color-cpu)',
-                  fill: 'rgba(74,158,255,0.14)',
+                  fill: true,
                 },
                 {
                   buffer: telemetryStore.system.get('cpuProcessorUtility'),
@@ -29,7 +29,7 @@ export function CpuPage(): React.JSX.Element {
                 },
                 {
                   buffer: telemetryStore.system.get('cpuBusiest'),
-                  color: 'rgba(255,255,255,0.30)',
+                  color: 'var(--color-chart-comparison)',
                   dashed: true,
                 },
               ]}
@@ -49,7 +49,79 @@ export function CpuPage(): React.JSX.Element {
       <div className="mt-4">
         <PerProcessorGrid />
       </div>
+
+      <div className="mt-4">
+        <ThermalZones />
+      </div>
     </PageShell>
+  );
+}
+
+/**
+ * ACPI thermal zones.
+ *
+ * This panel is on the CPU page because it is where someone looks for a CPU
+ * temperature, and it is written to answer that question honestly rather than
+ * to satisfy it. Windows exposes no CPU package sensor to an unelevated
+ * process: that needs an MSR read through a kernel-mode driver, which would
+ * mean shipping and installing one. What the firmware does publish is thermal
+ * zones, and those are shown here under their own names, with no relabelling.
+ */
+function ThermalZones(): React.JSX.Element {
+  const thermal = useTelemetry(
+    (s) => ({
+      zones: s?.thermal.zones ?? [],
+      unavailable: s?.thermal.zonesUnavailable ?? false,
+    }),
+    (a, b) =>
+      a.unavailable === b.unavailable &&
+      a.zones.length === b.zones.length &&
+      a.zones.every((zone, index) => zone.celsius === b.zones[index]?.celsius),
+  );
+
+  return (
+    <Panel title="Thermal zones" hint="Thermal Zone Information counter set">
+      {thermal.unavailable ? (
+        <div className="text-[12px] text-text-secondary">
+          This machine&rsquo;s firmware declares no thermal zones Windows can read.
+        </div>
+      ) : thermal.zones.length === 0 ? (
+        <div className="text-[12px] text-text-secondary">
+          No zone is reporting a reading.
+        </div>
+      ) : (
+        <div className="text-[12px]">
+          {thermal.zones.map((zone) => (
+            <Field
+              key={zone.instance}
+              label={zone.instance}
+              value={`${zone.celsius.toFixed(1)} °C`}
+              mono
+              definition={
+                zone.highPrecision
+                  ? 'From High Precision Temperature, in tenths of a Kelvin.'
+                  : 'From Temperature, in whole Kelvin. This machine does not publish the high-precision counter for this zone.'
+              }
+            />
+          ))}
+        </div>
+      )}
+      <Note>
+        An ACPI thermal zone is a real sensor the system firmware declares, and its value is read
+        fresh on every sample. What each zone is physically attached to is decided by the
+        firmware and is documented neither by ACPI nor by Windows, so a zone is never presented
+        here as &ldquo;CPU temperature&rdquo;. On this machine the hottest zone tracks CPU load
+        closely — idle in the sixties and seventies, saturated above a hundred within one sample,
+        and back down within seconds — which is why it is the one shown beside CPU in the desktop
+        widget, still under its own name.
+      </Note>
+      <Note>
+        A true CPU package temperature would need an MSR read through a kernel-mode driver. That
+        means an installer, a signed driver and administrator rights, all of which this
+        application deliberately does without, so it is not offered at all rather than
+        approximated.
+      </Note>
+    </Panel>
   );
 }
 
@@ -107,7 +179,7 @@ function Legend(): React.JSX.Element {
   const items = [
     { color: 'var(--color-cpu)', label: 'Time utilization' },
     { color: 'var(--color-warn)', label: 'Processor utility (Task Manager)' },
-    { color: 'rgba(255,255,255,0.30)', label: 'Busiest logical processor' },
+    { color: 'var(--color-chart-comparison)', label: 'Busiest logical processor' },
   ];
   return (
     <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-text-secondary">
@@ -236,7 +308,7 @@ const ProcessorTile = memo(function ProcessorTile({ index }: { index: number }) 
             {
               buffer,
               color: 'var(--color-cpu)',
-              fill: 'rgba(74,158,255,0.18)',
+              fill: true,
             },
           ]}
         />

@@ -3,7 +3,8 @@
 A high-accuracy Windows system resource and process monitor built with Electron,
 TypeScript, React, Rust, and native Windows telemetry APIs.
 
-CPU · Memory · Processes — GPU, Disk, Network and History to follow.
+CPU · Memory · Processes · Applications · GPU · Disk · Network · History ·
+Desktop widget
 
 ---
 
@@ -75,6 +76,7 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `pnpm test` | Run the TypeScript test suites |
 | `pnpm test:native` | Run the Rust test suite |
 | `pnpm typecheck` | Type-check every package |
+| `pnpm check:contrast` | Verify every UI colour pair against WCAG contrast minimums |
 | `pnpm native:build` | Build the Rust telemetry module in release mode |
 
 ### Development and validation tools
@@ -86,6 +88,8 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `node tools/devtools.mjs shot <file.png> [page]` | Drive the running app over the DevTools protocol (needs `--remote-debugging-port`) |
 | `node tools/fixtures/cpu-load.mjs [threads] [seconds]` | A controlled CPU workload, on its own |
 | `python tools/generate-icons.py` | Regenerate the application icons from `logo.png` (needs Pillow) |
+| `cargo run --example probe_temperature` (in `native/telemetry`) | Report which temperature sources this machine exposes to an unelevated process, and what the collector costs to run |
+| `TASK_MANAGER_TARGET=widget node tools/devtools.mjs shot <file.png>` | Capture the widget window rather than the main one |
 
 ---
 
@@ -205,6 +209,40 @@ provides: package identity first, then the publisher and product declared in the
 executable's version resource, then the executable path. Every group states which
 signal formed it and expands to the raw processes underneath.
 
+**GPU** — adapters from DXGI joined to the Windows GPU counter sets by LUID:
+per-adapter utilisation (the maximum across engine types, never a sum),
+per-engine-type breakdown, dedicated and shared memory, and per-process GPU
+usage and memory.
+
+**Disk** — per physical disk read/write throughput, active time, average read
+and write latency, queue length and IOPS, from the `PhysicalDisk` counter set.
+
+**Network** — per adapter send/receive throughput, link speed, packet rates and
+outbound discards, with loopback flagged and excluded from totals.
+
+**History** — tiered persistent history in SQLite: every sample for 10 minutes,
+5-second means for an hour, 1-minute means for a day, 5-minute means for a week.
+Each point carries the peak within its window alongside the mean, because an
+average hides the spike a post-hoc question is about. Around 5400 rows total, so
+the database stays a few hundred kilobytes however long it runs.
+
+**Temperature** — the three sources readable without administrator, each shown
+under the name of the sensor that produced it: NVIDIA GPU die temperature via
+NVML (joined to its adapter by PCI id, with the vendor's own throttle and
+shutdown thresholds), drive temperature via `IOCTL_STORAGE_QUERY_PROPERTY`
+(joined to its disk by disk number), and ACPI thermal zones via the
+`Thermal Zone Information` counter set. There is no CPU package temperature and
+no memory temperature, and neither is approximated — see below.
+
+**Desktop widget** — a frameless, always-on-top overlay in four layouts
+(minimal, compact, performance, top consumers), with selectable metrics, an
+optional temperature column between each label and its value, adjustable
+opacity, click-through, position lock, edge snapping and persisted placement. It is a second window in the same application reading the same
+snapshot stream, so it cannot disagree with the main window.
+
+**Tray** — live tooltip from the same snapshots, and the menu that controls the
+widget. It is also the guaranteed way out of click-through mode.
+
 **Self-measurement** — per-subsystem collection cost, duty cycle, dropped
 snapshots, tracked identity count.
 
@@ -254,9 +292,33 @@ error of −2.01% attributable to scheduler contention on an already-busy machin
   open have no path or version resource, so they group by image name alone —
   which is why all inaccessible `svchost.exe` instances land in one row. The
   grouping basis is shown on every row so this is visible rather than implied.
-- **Not yet collected:** GPU, VRAM, disk throughput, network throughput,
-  per-process disk and network attribution, file-level I/O attribution,
-  persistent history, tray, desktop widget.
+- **GPU utilisation is a maximum, not a sum.** Engines run concurrently, so
+  summing them would report well over 100% for an idle-ish GPU. This matches
+  Task Manager; the per-engine breakdown is shown so a video-decode-bound
+  workload is still visible as such.
+- **Per-process disk and network attribution is not implemented.** The process
+  I/O columns come from Windows' general-purpose I/O counters, which mix file,
+  network and device traffic; they are labelled "I/O", not "Disk". Real
+  attribution needs ETW.
+- **History covers system-wide metrics only.** Per-process history, and
+  file-level I/O attribution, are not implemented.
+- **There is no CPU package temperature, and the thermal zone is not one.**
+  Reaching a true package sensor means an MSR read through a signed kernel-mode
+  driver, which would require an installer and administrator rights. What is
+  shown beside CPU instead is an ACPI thermal zone: a real live sensor the system
+  firmware declares, which on tested hardware tracks CPU load within one sample,
+  but whose physical attachment is documented neither by ACPI nor by Windows. It
+  is always labelled with its own zone name, marked with a dotted underline, and
+  its tooltip says what it is. `MSAcpi_ThermalZoneTemperature` was checked and
+  needs administrator; `Win32_TemperatureProbe` was checked and has no instances.
+- **Memory temperature is not available at all.** Module sensors sit behind the
+  SMBus and no Windows API exposes it, so memory metrics show an em dash rather
+  than a number from elsewhere.
+- **GPU temperature is NVIDIA-only.** Neither AMD nor Intel publishes it through
+  a Windows API or a counter set, and their SDKs are not present on an end-user
+  machine. Those adapters report no temperature. Two identical NVIDIA boards also
+  report none per-adapter, because nothing documents NVML's enumeration order as
+  matching DXGI's and guessing could show one card's temperature on the other.
 - **Windows 11 x64 only.** The collectors are deliberately Windows-native; there
   is no cross-platform abstraction compromising them.
 
