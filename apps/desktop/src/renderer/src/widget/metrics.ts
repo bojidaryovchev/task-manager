@@ -27,12 +27,12 @@ export interface WidgetTemperature {
   celsius: number;
   detail: string;
   /**
-   * True when the sensor is not the thing the metric's label names.
+   * True when the sensor's own identity does not say what it is measuring.
    *
-   * Only the ACPI thermal zone shown beside CPU is indirect: it is a real live
-   * sensor, but what it is attached to is defined by the machine's firmware and
-   * documented nowhere, so it is not a CPU package reading. Rendered with a
-   * dotted underline to mark it as such.
+   * Only the ACPI thermal zone is indirect: it is a real live sensor, but ACPI
+   * records no physical attachment for a zone, so all that can honestly be said
+   * is which zone reported it. Rendered with a dotted underline to mark it as
+   * a reading that needs its tooltip read.
    */
   indirect: boolean;
   /** True when the reading is at or above a threshold the *vendor* published. */
@@ -71,6 +71,9 @@ const ACCENTS: Partial<Record<WidgetMetricId, string>> = {
   diskWrite: 'var(--color-network)',
   networkDown: 'var(--color-network)',
   networkUp: 'var(--color-disk)',
+  // Deliberately the muted text colour rather than a subsystem accent: a zone
+  // is not one of the machine's subsystems and should not read as one.
+  thermalZone: 'var(--color-text-secondary)',
 };
 
 /** The busiest hardware adapter, which is what a single GPU number means here. */
@@ -126,18 +129,30 @@ function toWidgetTemperature(
 }
 
 /**
- * The ACPI zone shown beside the CPU metrics.
+ * The ACPI thermal zone, shown as its own row under its own name.
  *
- * This is not a CPU package temperature and is never labelled as one. Windows
- * exposes no CPU package sensor to an unelevated process — that needs an MSR
- * read through a kernel-mode driver — so the honest best is the firmware's own
- * thermal zone, shown under its own name.
+ * It deliberately does **not** sit beside CPU. It is a real, live sensor — a
+ * read of it through WMI agrees with the performance counter to within a degree
+ * — but ACPI does not say what a zone is attached to, and an elevated read of
+ * this machine's zone found a passive trip point of 124 °C and a critical trip
+ * point of 125 °C, with no fan trip points at all. Firmware guarding a CPU die
+ * does not sit its limits 25 °C above the part's own Tjmax. So the zone is
+ * reported as a zone, and the CPU rows carry no temperature at all, because
+ * Windows exposes no CPU package sensor to an unelevated process.
  */
 function zoneTemperature(snapshot: SystemSnapshot): WidgetTemperature | null {
   return toWidgetTemperature(snapshot.thermal.primaryZone, {
     indirect: true,
-    note: 'A thermal zone declared by this machine’s firmware. What it is attached to is vendor-defined, so this is not a CPU package reading.',
+    note: 'An ACPI thermal zone declared by this machine’s firmware. ACPI does not record what a zone is attached to, and this one’s critical trip point is far above any CPU limit, so it is not a CPU temperature.',
   });
+}
+
+/** `\_TZ.TZ01` reads better as `TZ01` in a row that is 74 pixels wide. */
+function zoneLabel(snapshot: SystemSnapshot | null): string | null {
+  const sensor = snapshot?.thermal.primaryZone?.sensor;
+  if (!sensor) return null;
+  const leaf = sensor.split('.').pop() ?? sensor;
+  return leaf.replace(/^\\+/, '').toUpperCase();
 }
 
 /** The hottest drive, for the disk metrics, which are themselves aggregates. */
@@ -168,10 +183,15 @@ function temperatureFor(
   snapshot: SystemSnapshot,
 ): WidgetTemperature | null {
   switch (id) {
+    case 'thermalZone':
+      return zoneTemperature(snapshot);
+    // The CPU rows carry no temperature. There is no CPU package sensor
+    // available without a kernel-mode driver, and the ACPI zone is not one —
+    // putting it here would have implied otherwise, which is why it moved out.
     case 'cpuUtilization':
     case 'cpuUtility':
     case 'cpuBusiest':
-      return zoneTemperature(snapshot);
+      return null;
     case 'gpu':
     case 'vram':
       // The adapter's own sensor, joined on by the collector. Absent for every
@@ -195,7 +215,9 @@ export function readMetric(
 ): WidgetMetricValue {
   const descriptor = DESCRIPTORS.get(id);
   const base = {
-    label: descriptor?.label ?? id,
+    // The zone row is named after the sensor itself, so the widget never shows
+    // a temperature under a label that does not describe what measured it.
+    label: (id === 'thermalZone' ? zoneLabel(snapshot) : null) ?? descriptor?.label ?? id,
     definition: descriptor?.definition ?? '',
     accent: ACCENTS[id] ?? 'var(--color-accent)',
     temperature: snapshot ? temperatureFor(id, snapshot) : null,
@@ -283,6 +305,12 @@ export function readMetric(
           : formatBitsPerSecond(snapshot.network.sentBytesPerSecond),
         fraction: null,
       };
+    case 'thermalZone':
+      // The temperature is the whole of this row, and it is rendered in the
+      // temperature column. A thermal zone has no utilisation, so the value
+      // column carries the same em dash used everywhere for "not applicable"
+      // rather than a number invented to fill it.
+      return { ...base, text: '—', fraction: null };
   }
 }
 

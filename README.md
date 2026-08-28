@@ -231,8 +231,9 @@ under the name of the sensor that produced it: NVIDIA GPU die temperature via
 NVML (joined to its adapter by PCI id, with the vendor's own throttle and
 shutdown thresholds), drive temperature via `IOCTL_STORAGE_QUERY_PROPERTY`
 (joined to its disk by disk number), and ACPI thermal zones via the
-`Thermal Zone Information` counter set. There is no CPU package temperature and
-no memory temperature, and neither is approximated — see below.
+`Thermal Zone Information` counter set, reported in its own row under its own
+name. There is no CPU temperature and no memory temperature, and neither is
+approximated — see below.
 
 **Desktop widget** — a frameless, always-on-top overlay in four layouts
 (minimal, compact, performance, top consumers), with selectable metrics, an
@@ -302,15 +303,16 @@ error of −2.01% attributable to scheduler contention on an already-busy machin
   attribution needs ETW.
 - **History covers system-wide metrics only.** Per-process history, and
   file-level I/O attribution, are not implemented.
-- **There is no CPU package temperature, and the thermal zone is not one.**
-  Reaching a true package sensor means an MSR read through a signed kernel-mode
-  driver, which would require an installer and administrator rights. What is
-  shown beside CPU instead is an ACPI thermal zone: a real live sensor the system
-  firmware declares, which on tested hardware tracks CPU load within one sample,
-  but whose physical attachment is documented neither by ACPI nor by Windows. It
-  is always labelled with its own zone name, marked with a dotted underline, and
-  its tooltip says what it is. `MSAcpi_ThermalZoneTemperature` was checked and
-  needs administrator; `Win32_TemperatureProbe` was checked and has no instances.
+- **There is no CPU temperature. The CPU shows no temperature at all.** Reaching
+  a true package sensor means an MSR read through a signed kernel-mode driver,
+  which would require an installer and administrator rights. The nearest thing
+  Windows offers unelevated is an ACPI thermal zone, and an elevated diagnostic
+  read established that this machine's zone has a passive trip point of 124 °C
+  and a critical trip point of 125 °C with no fan trip points — firmware guarding
+  a processor die does not sit its limits far above that part's own thermal
+  limit. So the zone is reported as a zone, in its own row under its own ACPI
+  name, and nothing claims it is the CPU's. (`Win32_TemperatureProbe` was also
+  checked and publishes no instances.)
 - **Memory temperature is not available at all.** Module sensors sit behind the
   SMBus and no Windows API exposes it, so memory metrics show an em dash rather
   than a number from elsewhere.

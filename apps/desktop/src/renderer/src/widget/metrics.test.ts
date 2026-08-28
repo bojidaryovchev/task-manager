@@ -7,9 +7,13 @@ import { readMetric } from './metrics.js';
  *
  * This is the guarantee worth testing here. The widget is the surface where a
  * degree reading sits next to a label like "CPU", and the whole risk is that a
- * number ends up next to a label that does not describe what measured it. These
- * tests pin: memory and network never get a reading, the CPU reading is always
- * marked indirect, and a device reading is never marked indirect.
+ * number ends up next to a label that does not describe what measured it.
+ *
+ * The CPU rows carry no temperature at all. An elevated read of this machine's
+ * ACPI zone found a passive trip point of 124 C and a critical trip point of
+ * 125 C with no fan trip points — firmware guarding a CPU die does not sit its
+ * limits 25 C above the part's own Tjmax — so the zone is reported as a zone,
+ * under its own name, and never as the CPU's temperature.
  */
 
 const ZONE: TemperatureReading = {
@@ -76,16 +80,31 @@ function snapshot(thermal: Partial<SystemSnapshot['thermal']> = {}): SystemSnaps
 }
 
 describe('temperatures beside widget metrics', () => {
-  it('shows the ACPI zone beside every CPU metric, marked as indirect', () => {
+  it('never puts a temperature on a CPU metric', () => {
+    // The regression this exists to prevent: the ACPI zone used to sit in the
+    // CPU row, which read as a CPU temperature to anyone not hovering it.
     const state = snapshot({ primaryZone: ZONE });
     for (const id of ['cpuUtilization', 'cpuUtility', 'cpuBusiest'] as const) {
-      const temperature = readMetric(id, state).temperature;
-      expect(temperature?.celsius).toBe(94.1);
-      // The marker that stops this reading passing as a CPU package sensor.
-      expect(temperature?.indirect).toBe(true);
-      expect(temperature?.detail).toContain('\\_TZ.TZ01');
-      expect(temperature?.detail).toContain('not a CPU package reading');
+      expect(readMetric(id, state).temperature).toBeNull();
     }
+  });
+
+  it('reports the zone as its own row, named after the zone', () => {
+    const metric = readMetric('thermalZone', snapshot({ primaryZone: ZONE }));
+    expect(metric.label).toBe('TZ01');
+    expect(metric.temperature?.celsius).toBe(94.1);
+    // Marked so the reading is not taken at face value.
+    expect(metric.temperature?.indirect).toBe(true);
+    expect(metric.temperature?.detail).toContain('\\_TZ.TZ01');
+    expect(metric.temperature?.detail).toContain('not a CPU temperature');
+    // A thermal zone has no utilisation, so the value column says so.
+    expect(metric.text).toBe('—');
+  });
+
+  it('falls back to a generic label when no zone is reporting', () => {
+    const metric = readMetric('thermalZone', snapshot());
+    expect(metric.label).toBe('Zone');
+    expect(metric.temperature).toBeNull();
   });
 
   it('shows the GPU die temperature without marking it indirect', () => {
@@ -120,15 +139,15 @@ describe('temperatures beside widget metrics', () => {
 
   it('has no temperature at all when nothing reports one', () => {
     const state = snapshot();
-    expect(readMetric('cpuUtilization', state).temperature).toBeNull();
+    expect(readMetric('thermalZone', state).temperature).toBeNull();
     expect(readMetric('diskRead', state).temperature).toBeNull();
   });
 
   it('marks a reading hot only against a threshold the vendor published', () => {
     const state = snapshot({ primaryZone: { ...ZONE, celsius: 200 } });
-    // The ACPI zone comes with no thresholds, so there is nothing to be above,
-    // however high the number is.
-    expect(readMetric('cpuUtilization', state).temperature?.overThreshold).toBe(false);
+    // The ACPI zone comes with no thresholds through this counter set, so there
+    // is nothing to be above, however high the number is.
+    expect(readMetric('thermalZone', state).temperature?.overThreshold).toBe(false);
     expect(readMetric('gpu', snapshot()).temperature?.overThreshold).toBe(false);
   });
 
@@ -146,6 +165,7 @@ describe('temperatures beside widget metrics', () => {
   });
 
   it('reports no temperature before the first snapshot arrives', () => {
-    expect(readMetric('cpuUtilization', null).temperature).toBeNull();
+    expect(readMetric('thermalZone', null).temperature).toBeNull();
+    expect(readMetric('gpu', null).temperature).toBeNull();
   });
 });

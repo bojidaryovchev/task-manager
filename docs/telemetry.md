@@ -629,6 +629,34 @@ one. What a zone is physically attached to is decided by the machine's firmware
 and is documented neither by ACPI nor by Windows. A zone called `\_TZ.TZ01` on
 one machine and one on another need have nothing in common.
 
+**The reading itself is faithful.** An elevated read of
+`MSAcpi_ThermalZoneTemperature` — an independent path to the same ACPI data —
+returned 91.1 °C (raw 3642 tenths of a Kelvin) while the performance counter
+returned 92.1 °C moments later. The counter, the Kelvin conversion and the
+value displayed all agree.
+
+**The trip points say it is not the CPU.** The same elevated read returned, for
+`ACPI\ThermalZone\TZ01_0`:
+
+| Property | Value |
+|---|---|
+| `_PSV` passive trip point | 124.1 °C |
+| `_CRT` critical trip point | 125.1 °C |
+| `_ACx` active (fan) trip points | none — count 0 |
+| `_TSP` sampling period | 4 s |
+
+Firmware guarding a processor die does not sit its passive limit 20-25 °C above
+that part's own Tjmax; the chip would be destroyed long before the zone reacted.
+This is a backstop zone with no fan control and no declared attachment. It is
+therefore reported **as a zone, under its own ACPI name**, in its own row — and
+the CPU carries no temperature at all.
+
+This replaced an earlier arrangement that showed the zone in the CPU row with a
+dotted underline and a qualifying tooltip. The load correlation that justified
+it (below) is real, but a number next to a label reads as that label's number
+whatever the tooltip says, and correlation with load is not evidence of
+attachment: everything inside a laptop chassis warms up when the CPU works.
+
 **What was measured here.** Sampling `\_TZ.TZ01` on the development machine
 through an idle → 24-thread load → cooldown cycle:
 
@@ -667,7 +695,7 @@ Three further sources were checked on real hardware and rejected:
 
 | Checked | Result |
 |---|---|
-| `MSAcpi_ThermalZoneTemperature` (WMI `root\WMI`) | Access denied without administrator. Exposes the same ACPI data as the PDH counter set, which needs no elevation. |
+| `MSAcpi_ThermalZoneTemperature` (WMI `root\WMI`) | Access denied without administrator. Exposes the same ACPI data as the PDH counter set, plus the trip points the counter set omits. Used once, elevated, as a diagnostic to establish what the zone is; not used by the application. |
 | `Win32_TemperatureProbe` | No instances. The SMBIOS class is unpopulated on ordinary hardware. |
 | `Get-StorageReliabilityCounter` | "No reliability counters" on all four drives, and it needs administrator besides. |
 

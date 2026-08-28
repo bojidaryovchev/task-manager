@@ -37,7 +37,8 @@ export type WidgetMetricId =
   | 'diskRead'
   | 'diskWrite'
   | 'networkDown'
-  | 'networkUp';
+  | 'networkUp'
+  | 'thermalZone';
 
 export interface WidgetMetricDescriptor {
   id: WidgetMetricId;
@@ -126,6 +127,13 @@ export const WIDGET_METRICS: readonly WidgetMetricDescriptor[] = [
     id: 'networkUp',
     label: 'Net up',
     definition: 'Bytes sent per second across non-loopback adapters.',
+    collected: true,
+  },
+  {
+    id: 'thermalZone',
+    label: 'Zone',
+    definition:
+      "The hottest ACPI thermal zone the system firmware declares, shown under its own name. This is NOT a CPU temperature: ACPI does not say what a zone is attached to, and on this machine the zone's critical trip point is 125 C, far above any CPU's limit. Windows exposes no CPU package sensor to an unelevated process.",
     collected: true,
   },
 ];

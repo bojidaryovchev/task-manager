@@ -162,11 +162,14 @@ That single decision settles the rest:
   vendor/device id and by disk number, both exact. Where the join would be
   ambiguous — two identical GPUs — no attachment is made at all rather than one
   made by enumeration order, which nothing documents as meaningful.
-- The ACPI zone is joined to nothing. It is displayed beside CPU, because that
-  is where someone looks for it and because on tested hardware it tracks CPU load
-  within one sample, but it is labelled with its own zone name, marked visually
-  as indirect, and stated in its tooltip not to be a package sensor. It is
-  evidence, and it is presented as evidence.
+- The ACPI zone is joined to nothing, and gets its own row under its own ACPI
+  name. It was originally shown in the CPU row with a qualifying tooltip. That
+  was wrong twice over: an elevated diagnostic read found the zone's passive and
+  critical trip points at 124 and 125 °C with no fan trip points, which is not
+  how firmware guards a processor die; and a number beside a label reads as that
+  label's number however careful the tooltip is. Correlation with CPU load was
+  the evidence for the original placement, and correlation is not attachment —
+  everything in a laptop chassis warms up when the CPU works.
 - Memory and network get nothing, and "nothing" renders as the same em dash the
   rest of the application uses for an unmeasured value.
 

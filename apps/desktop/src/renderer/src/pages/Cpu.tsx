@@ -107,19 +107,23 @@ function ThermalZones(): React.JSX.Element {
         </div>
       )}
       <Note>
-        An ACPI thermal zone is a real sensor the system firmware declares, and its value is read
-        fresh on every sample. What each zone is physically attached to is decided by the
-        firmware and is documented neither by ACPI nor by Windows, so a zone is never presented
-        here as &ldquo;CPU temperature&rdquo;. On this machine the hottest zone tracks CPU load
-        closely — idle in the sixties and seventies, saturated above a hundred within one sample,
-        and back down within seconds — which is why it is the one shown beside CPU in the desktop
-        widget, still under its own name.
+        An ACPI thermal zone is a real sensor the system firmware declares, read fresh on every
+        sample. Its value here is faithful: an independent read of the same zone through WMI
+        agreed with this counter to within a degree.
+      </Note>
+      <Note>
+        <strong>It is not a CPU temperature, and is never shown as one.</strong> ACPI records no
+        physical attachment for a zone. An elevated read of this machine&rsquo;s zone found a
+        passive trip point of 124&nbsp;°C and a critical trip point of 125&nbsp;°C, with no fan
+        trip points at all — firmware guarding a processor die does not sit its limits far above
+        that part&rsquo;s own thermal limit. So the zone appears under its own name, here and in
+        the desktop widget, and the CPU carries no temperature.
       </Note>
       <Note>
         A true CPU package temperature would need an MSR read through a kernel-mode driver. That
         means an installer, a signed driver and administrator rights, all of which this
         application deliberately does without, so it is not offered at all rather than
-        approximated.
+        approximated from a sensor that measures something else.
       </Note>
     </Panel>
   );
