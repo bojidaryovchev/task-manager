@@ -198,6 +198,65 @@ rather than zeros.
 Measured cost of the whole PDH read, including disk, network, GPU and
 temperature: 0.78 ms per sample, of which the thermal collector is 0.06-0.13 ms.
 
+## Export
+
+Telemetry leaves the application as JSON or Markdown, to a file or the
+clipboard. The intended reader is a language model being asked to analyse it,
+and that one fact decides the design.
+
+**A number without its definition is worse than no number.** An analyst handed
+`cpu: 95` cannot tell whether that is time utilization, which is capped at 100
+and frequency-independent, or processor utility, which legitimately exceeds 100
+on a boosting processor — and on this machine those two differ by more than 50
+points at the same instant. So every column and every value carries its own
+definition and unit inside the export, next to the data rather than in a
+glossary, and the preamble names the traps explicitly.
+
+**The honesty rules that govern the UI govern the export.** A value the
+collector did not measure is exported as `null`, never as zero. A section with
+no data carries the reason — process collection was off, a counter set is
+missing on this machine, history is disabled — rather than being dropped, because
+silence reads as "there were no processes". A capped table states its cap and its
+ordering, so a truncated list can never be mistaken for a complete one.
+
+**What can be a time series, and what cannot.** Machine-wide CPU, memory, disk,
+network and GPU have history because the history engine stores them. Processes,
+applications and temperatures do not, because per-process history is not
+collected and temperatures are not written to the database. The export offers a
+history option only for what actually has one, and says why for the rest. This
+is the same constraint as everywhere else: the shape of the feature follows what
+was really measured.
+
+**The System Idle Process is flagged rather than dropped.** PID 0 sorts to the
+top of any CPU-ordered list, and its percentage is idle capacity rather than
+work. Removing it would stop the CPU column summing to 100; leaving it unmarked
+would let a reader name it the machine's largest consumer. It gets an
+`isIdleProcess` column whose definition says exactly what it is, matching how the
+Processes page shows it muted and labelled.
+
+**Tables are `columns` plus `rows`, not an array of objects.** A thousand-process
+export repeats its keys a thousand times otherwise — roughly three times the
+tokens for no extra information, on a payload that has to fit in a conversation.
+
+### Where the work happens
+
+Building and rendering are pure functions in `packages/shared/src/export.ts`,
+which makes them directly testable and keeps them out of both processes' way.
+The renderer composes the document from the snapshot it already holds and, when
+asked, one history query.
+
+Delivery is in main, because the renderer has neither the filesystem nor the
+clipboard by design. It hands over finished text and a suggested filename;
+`ExportService` owns the save dialog and the write. The suggested name is
+sanitised there like anything else crossing that boundary — reduced to a bare
+filename, stripped of the characters NTFS forbids — because it seeds a dialog
+path. Dismissing that dialog is reported as `saved: false` with no error, since
+changing your mind is not a failure.
+
+The clipboard write is read back before the UI claims success: the system
+clipboard is a shared resource another process can be holding, so writing to it
+is a request rather than an assignment.
+
 ## History
 
 Persistence lives in the native layer, in SQLite compiled from the bundled

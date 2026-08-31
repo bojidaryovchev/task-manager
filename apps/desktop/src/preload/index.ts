@@ -34,6 +34,11 @@ const api: TaskManagerApi = {
   setHistoryEnabled: (enabled: boolean) =>
     ipcRenderer.invoke(IpcChannel.SetHistoryEnabled, enabled === true),
 
+  saveExport: (suggestedName: string, contents: string) =>
+    ipcRenderer.invoke(IpcChannel.SaveExport, String(suggestedName), String(contents)),
+  copyToClipboard: (text: string) =>
+    ipcRenderer.invoke(IpcChannel.CopyToClipboard, String(text)),
+
   getWidgetSettings: () => ipcRenderer.invoke(IpcChannel.GetWidgetSettings),
   setWidgetSettings: (patch: Partial<WidgetSettings>) =>
     ipcRenderer.invoke(IpcChannel.SetWidgetSettings, patch),

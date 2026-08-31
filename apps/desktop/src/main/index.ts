@@ -4,6 +4,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import type { CollectorConfig } from '@task-manager/telemetry-types';
 import { IpcChannel } from '@shared/ipc';
 import type { WidgetSettings } from '@shared/widget.js';
+import { ExportService } from './export-service.js';
 import { SettingsStore } from './settings-store.js';
 import { TelemetryService } from './telemetry-service.js';
 import { AppTray } from './tray.js';
@@ -143,6 +144,14 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     settings?.setHistoryEnabled(wanted);
     return service.setHistory(historyPath(), wanted);
   });
+
+  const exports = new ExportService();
+  ipcMain.handle(IpcChannel.SaveExport, (event, name: unknown, contents: unknown) =>
+    // Parented to the window that asked, so the dialog is modal to it rather
+    // than floating free of the application.
+    exports.saveToFile(name, contents, BrowserWindow.fromWebContents(event.sender)),
+  );
+  ipcMain.handle(IpcChannel.CopyToClipboard, (_event, text: unknown) => exports.copy(text));
 
   ipcMain.handle(IpcChannel.GetWidgetSettings, () => controller.settings);
   ipcMain.handle(IpcChannel.SetWidgetSettings, (_event, patch: unknown) => {

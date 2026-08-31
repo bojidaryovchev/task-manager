@@ -241,6 +241,16 @@ optional temperature column between each label and its value, adjustable
 opacity, click-through, position lock, edge snapping and persisted placement. It is a second window in the same application reading the same
 snapshot stream, so it cannot disagree with the main window.
 
+**Export** — the whole snapshot, or any part of it, as JSON or Markdown, to a
+file or the clipboard. Built for handing to a language model for analysis, so
+every column carries its own definition and unit: an analyst given `cpu: 95`
+cannot otherwise tell time utilization from processor utility, and the two
+differ by more than 50 points at the same instant on this machine. Unmeasured
+values stay null, missing sections state why, and a capped table states its cap
+and its ordering. Machine-wide metrics can also be exported as a time series;
+processes, applications and temperatures cannot, because no per-process history
+is kept — and the export says so rather than quietly offering less.
+
 **Tray** — live tooltip from the same snapshots, and the menu that controls the
 widget. It is also the guaranteed way out of click-through mode.
 

@@ -9,6 +9,7 @@ import { ProcessesPage } from './pages/Processes.js';
 import { ApplicationsPage } from './pages/Applications.js';
 import { DebugPage } from './pages/Debug.js';
 import { WidgetSettingsPage } from './pages/WidgetSettings.js';
+import { ExportPage } from './pages/Export.js';
 import { DiskPage, GpuPage, NetworkPage } from './pages/Devices.js';
 import { HistoryPage } from './pages/History.js';
 
@@ -71,6 +72,7 @@ export function App(): React.JSX.Element {
         {page === 'network' && <NetworkPage />}
         {page === 'history' && <HistoryPage />}
         {page === 'widget' && <WidgetSettingsPage />}
+        {page === 'export' && <ExportPage />}
         {page === 'debug' && <DebugPage />}
       </main>
     </div>

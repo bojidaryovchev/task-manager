@@ -47,6 +47,11 @@ export const IpcChannel = {
   GetHistoryStatus: 'history:getStatus',
   /** invoke: (enabled: boolean) => HistoryStatus */
   SetHistoryEnabled: 'history:setEnabled',
+
+  /** invoke: (suggestedName, contents) => ExportSaveResult */
+  SaveExport: 'export:save',
+  /** invoke: (text: string) => boolean */
+  CopyToClipboard: 'export:copy',
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -58,6 +63,18 @@ export interface HistoryStatus {
   path: string;
   /** Rows currently held per retention tier. */
   tiers: HistoryTier[];
+}
+
+/** What happened to a save-to-file request. */
+export interface ExportSaveResult {
+  /** False when the user dismissed the save dialog. Not an error. */
+  saved: boolean;
+  /** Where it was written, when it was. */
+  path?: string;
+  /** Bytes written. */
+  byteLength?: number;
+  /** Present only when the write itself failed. */
+  error?: string;
 }
 
 /** Reported when the native module could not be loaded, so the UI can say so. */
@@ -116,4 +133,16 @@ export interface TaskManagerApi {
   getHistoryStatus(): Promise<HistoryStatus>;
   /** Turn recording on or off. With it off nothing is written to disk. */
   setHistoryEnabled(enabled: boolean): Promise<HistoryStatus>;
+
+  // --- export --------------------------------------------------------------
+  /**
+   * Write an export to a file the user chooses.
+   *
+   * The renderer has no filesystem access, so it hands the finished text to
+   * main, which owns the save dialog and the write. Dismissing the dialog
+   * returns `saved: false` and is not an error.
+   */
+  saveExport(suggestedName: string, contents: string): Promise<ExportSaveResult>;
+  /** Put text on the system clipboard. Returns false if it could not be set. */
+  copyToClipboard(text: string): Promise<boolean>;
 }
