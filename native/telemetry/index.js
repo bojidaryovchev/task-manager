@@ -704,3 +704,5 @@ module.exports.TelemetryEngine = nativeBinding.TelemetryEngine
 module.exports.collectSingleSnapshot = nativeBinding.collectSingleSnapshot
 module.exports.getHostInfo = nativeBinding.getHostInfo
 module.exports.nativeProbe = nativeBinding.nativeProbe
+module.exports.registerForRestart = nativeBinding.registerForRestart
+module.exports.unregisterForRestart = nativeBinding.unregisterForRestart

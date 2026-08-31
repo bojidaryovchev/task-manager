@@ -107,6 +107,14 @@ pub struct EngineState {
     pub sequence: AtomicU64,
     /// Snapshots that could not be delivered because the JS queue was full.
     pub dropped: AtomicU32,
+    /// The message from a panic that killed the sampling thread, if one did.
+    ///
+    /// A panic in a spawned thread unwinds that thread and leaves the rest of
+    /// the process running. For a monitor that is the worst possible failure:
+    /// collection stops, but everything still *looks* alive and the UI shows the
+    /// last snapshot forever. Recording it here lets the application say the
+    /// collector died instead of quietly showing stale numbers.
+    pub panic_message: Mutex<Option<String>>,
 }
 
 impl EngineState {
@@ -118,6 +126,7 @@ impl EngineState {
             latest: Mutex::new(None),
             sequence: AtomicU64::new(0),
             dropped: AtomicU32::new(0),
+            panic_message: Mutex::new(None),
         }
     }
 }

@@ -2,9 +2,13 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import type { CollectorConfig } from '@task-manager/telemetry-types';
-import { IpcChannel } from '@shared/ipc';
+import { IpcChannel, type DiagnosticsInfo } from '@shared/ipc';
 import type { WidgetSettings } from '@shared/widget.js';
+import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
 import { ExportService } from './export-service.js';
+import { Logger } from './logger.js';
+import { loadNative } from './native.js';
+import { Resilience, WINDOWS_RESTART_ARGUMENT } from './resilience.js';
 import { SettingsStore } from './settings-store.js';
 import { TelemetryService } from './telemetry-service.js';
 import { AppTray } from './tray.js';
@@ -25,6 +29,11 @@ let settings: SettingsStore | null = null;
 let widget: WidgetController | null = null;
 let tray: AppTray | null = null;
 let mainWindow: BrowserWindow | null = null;
+let logger: Logger | null = null;
+let resilience: Resilience | null = null;
+let guard: CrashGuard | null = null;
+/** Whether Windows accepted the restart registration, for the diagnostics view. */
+let restartRegistered = false;
 /** Set on the way out so window close handlers do not fight the quit. */
 let quitting = false;
 
@@ -74,6 +83,7 @@ function createMainWindow(): BrowserWindow {
   });
 
   const webContentsId = window.webContents.id;
+  resilience?.watchWindow(window, 'main window');
   window.once('ready-to-show', () => window.show());
   // A closed window must not keep a process-list subscription alive.
   window.on('closed', () => {
@@ -153,6 +163,29 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
   );
   ipcMain.handle(IpcChannel.CopyToClipboard, (_event, text: unknown) => exports.copy(text));
 
+  ipcMain.handle(IpcChannel.GetDiagnostics, (): DiagnosticsInfo => ({
+    logDirectory: logger?.directory ?? '',
+    logFiles: logger?.listFiles() ?? [],
+    crashDumpDirectory: app.getPath('crashDumps'),
+    crashes: guard?.listReports() ?? [],
+    recentRestarts: guard?.recentRestartCount() ?? 0,
+    maxRestarts: CRASH_LIMITS.maxRestarts,
+    restartRegistered,
+    startedAfterCrash: resilience?.wasRestartedAfterCrash ?? false,
+    restartOrigin: resilience?.restartOrigin ?? null,
+  }));
+  ipcMain.handle(IpcChannel.OpenLogFolder, () => {
+    if (logger) void shell.openPath(logger.directory);
+  });
+  ipcMain.handle(
+    IpcChannel.ReportRendererError,
+    (_event, message: unknown, stack: unknown, kind: unknown) => {
+      // The renderer cannot write to disk, so an error there would otherwise
+      // live only in a devtools console nobody has open.
+      logger?.error('renderer', `${String(kind)}: ${String(message)}`, String(stack));
+    },
+  );
+
   ipcMain.handle(IpcChannel.GetWidgetSettings, () => controller.settings);
   ipcMain.handle(IpcChannel.SetWidgetSettings, (_event, patch: unknown) => {
     // The store normalises whatever arrives, so a renderer cannot write an
@@ -176,6 +209,27 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  // Logging and crash handling come first, before any of the work that could
+  // fail. A crash during startup is the one most worth having a record of, and
+  // the crash reporter has to be started before the app is ready to catch it.
+  logger = new Logger();
+  guard = new CrashGuard(logger.directory, logger);
+  resilience = new Resilience({
+    logger,
+    guard,
+    onBeforeRelaunch: () => telemetry?.stop(),
+  });
+  resilience.startCrashReporter();
+  resilience.install();
+  logger.info(
+    'app',
+    `starting ${app.getVersion()} (electron ${process.versions.electron}, node ${process.versions.node})` +
+      (resilience.restartOrigin === 'windows'
+        ? ' — restarted by Windows after the process died outright'
+        : resilience.restartOrigin === 'self'
+          ? ' — relaunched itself after catching a fatal error'
+          : ''),
+  );
   app.on('second-instance', () => showMainWindow());
 
   void app.whenReady().then(() => {
@@ -191,6 +245,27 @@ if (!app.requestSingleInstanceLock()) {
       onQuit: quit,
       onWidgetClosed: (webContentsId) => telemetry?.releaseWindow(webContentsId),
       onSettingsChanged: () => tray?.refreshMenu(),
+      onWindowCreated: (window) => resilience?.watchWindow(window, 'widget'),
+    });
+
+    // Ask Windows to bring the application back if it crashes hard enough that
+    // nothing in this process survives to do it. Costs nothing while healthy.
+    const native = loadNative().module;
+    if (native) {
+      restartRegistered = native.registerForRestart(WINDOWS_RESTART_ARGUMENT);
+      const registered = restartRegistered;
+      logger?.info(
+        'crash',
+        registered
+          ? 'registered with the Windows Restart Manager'
+          : 'Windows declined the restart registration; the application will not relaunch itself after a hard crash',
+      );
+    }
+
+    // A collector thread that dies leaves the process healthy and the numbers
+    // frozen, so it is reported rather than left to look like a working app.
+    telemetry.onCollectorDeath((message) => {
+      resilience?.recordCollectorFailure(message);
     });
 
     registerIpc(telemetry, widget);
@@ -205,6 +280,9 @@ if (!app.requestSingleInstanceLock()) {
 
     mainWindow = createMainWindow();
     widget.restore();
+
+    // Only when explicitly asked on the command line; see resilience.ts.
+    resilience?.scheduleCrashTestIfRequested();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) showMainWindow();
@@ -225,8 +303,17 @@ if (!app.requestSingleInstanceLock()) {
   // change reaches disk.
   app.on('before-quit', () => {
     quitting = true;
+    resilience?.beginShutdown();
+    // Without this, Windows could bring the application back after a quit it
+    // happened to observe as abnormal - a session ending abruptly, say.
+    try {
+      loadNative().module?.unregisterForRestart();
+    } catch (error) {
+      logger?.warn('crash', 'could not cancel the restart registration', error);
+    }
     telemetry?.stop();
     tray?.destroy();
     settings?.flush();
+    logger?.info('app', 'shutting down cleanly');
   });
 }

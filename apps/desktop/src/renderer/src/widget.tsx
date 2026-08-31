@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Widget } from './widget/Widget.js';
+import { installErrorReporting } from './lib/report-errors.js';
 import './styles.css';
 
 /**
@@ -10,6 +11,8 @@ import './styles.css';
  * ships its own small bundle and cannot accidentally pull the whole UI into a
  * window that is 210 pixels wide.
  */
+installErrorReporting();
+
 const container = document.getElementById('root');
 if (!container) throw new Error('Root element missing');
 

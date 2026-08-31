@@ -45,6 +45,12 @@ export interface WidgetWindowHost {
   preloadPath: string;
   /** Called when the widget window has gone, so subscriptions can be released. */
   onClosed(webContentsId: number): void;
+  /**
+   * Called as soon as the window exists, so crash handling can be attached to
+   * it. The widget is recreated whenever it is re-enabled, so this fires each
+   * time rather than once.
+   */
+  onCreated?(window: BrowserWindow): void;
 }
 
 export class WidgetWindow {
@@ -105,6 +111,7 @@ export class WidgetWindow {
     });
 
     this.#window = window;
+    this.#host.onCreated?.(window);
     window.setOpacity(settings.opacity);
     this.applyClickThrough(settings.clickThrough);
     if (settings.alwaysOnTop) {

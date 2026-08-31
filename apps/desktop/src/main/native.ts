@@ -21,12 +21,28 @@ export interface NativeTelemetryModule {
   getHostInfo(): HostInfo;
   collectSingleSnapshot(): SystemSnapshot;
   nativeProbe(): string;
+  /**
+   * Ask the Windows Restart Manager to relaunch this process if it crashes or
+   * hangs. Returns false when Windows refused, which only means the application
+   * will not come back by itself.
+   */
+  registerForRestart(commandLine: string): boolean;
+  /** Cancel that, so a deliberate quit is never mistaken for a crash. */
+  unregisterForRestart(): boolean;
 }
 
 export interface NativeEngine {
   start(onSnapshot: (snapshot: SystemSnapshot) => void): void;
   stop(): void;
   readonly isRunning: boolean;
+  /**
+   * The panic that killed the sampling thread, or null if none did.
+   *
+   * Non-null means collection has stopped and every value on screen is stale.
+   * Polled rather than pushed, because the callback that would carry an event
+   * is exactly what stops working when the sampler dies.
+   */
+  readonly collectorPanic: string | null;
   getLatestSnapshot(): SystemSnapshot | null;
   getConfig(): CollectorConfig;
   setConfig(config: CollectorConfig): CollectorConfig;

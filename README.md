@@ -87,6 +87,7 @@ checked against it (see [Type safety across the boundary](#type-safety-across-th
 | `node tools/measure-load.mjs [threads] [seconds]` | Run a controlled CPU workload and check per-process CPU normalisation against arithmetic expectation |
 | `node tools/devtools.mjs shot <file.png> [page]` | Drive the running app over the DevTools protocol (needs `--remote-debugging-port`) |
 | `node tools/fixtures/cpu-load.mjs [threads] [seconds]` | A controlled CPU workload, on its own |
+| `TaskManager.exe --crash-test=main` | Fault the main process on purpose to verify it restarts and logs. `--crash-test=collector` simulates the sampling thread dying. |
 | `python tools/generate-icons.py` | Regenerate the application icons from `logo.png` (needs Pillow) |
 | `cargo run --example probe_temperature` (in `native/telemetry`) | Report which temperature sources this machine exposes to an unelevated process, and what the collector costs to run |
 | `TASK_MANAGER_TARGET=widget node tools/devtools.mjs shot <file.png>` | Capture the widget window rather than the main one |
@@ -250,6 +251,18 @@ values stay null, missing sections state why, and a capped table states its cap
 and its ordering. Machine-wide metrics can also be exported as a time series;
 processes, applications and temperatures cannot, because no per-process history
 is kept — and the export says so rather than quietly offering less.
+
+**Crash recovery and logging** — a crashed renderer is reloaded automatically,
+backing off and then giving up rather than looping. A catchable fatal error in
+the main process relaunches the application; a hard crash that leaves nothing
+running is handled by the Windows Restart Manager through
+`RegisterApplicationRestart`, so there is no watchdog process and nothing left
+behind. Restarts are counted across restarts and the application stops
+relaunching once it is clearly looping — crashing forever is worse than staying
+down. Everything is written to a rotating log with a JSON report per crash and
+local minidumps for native faults; nothing is uploaded anywhere. A sampling
+thread that dies is detected and reported, because a monitor showing stale
+numbers while looking healthy is the worst failure it can have.
 
 **Tray** — live tooltip from the same snapshots, and the menu that controls the
 widget. It is also the guaranteed way out of click-through mode.

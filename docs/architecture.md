@@ -358,6 +358,103 @@ overwrites in place. A chart costs a constant amount of memory no matter how lon
 the application runs. A missing measurement is stored as `NaN` and drawn as a gap
 rather than as zero.
 
+## Surviving a crash
+
+"Crash" is five different events, and they are not interchangeable. Treating
+them as one is how an application ends up either restarting when it should not
+or sitting dead when it could have recovered.
+
+| What died | Detectable in-process | Recoverable in-process | Response |
+|---|---|---|---|
+| Renderer | `render-process-gone` | yes | reload the window, backing off |
+| Renderer hung | `unresponsive` | sometimes | recorded; the user decides |
+| GPU / utility child | `child-process-gone` | Electron re-spawns it | recorded only |
+| Main, catchable | `uncaughtException` | yes | recorded, then relaunch |
+| **Main, hard crash** | **no** | **no** | Windows relaunches it |
+| Collector thread | polled | no | reported; the UI stops claiming to be live |
+
+### The main process cannot restart itself
+
+Once a native fault takes the main process down, nothing is left running to
+relaunch anything. The usual answer is a watchdog process, and it is the wrong
+one here: this application ships as a single executable that installs nothing,
+and a background watchdog is exactly the sort of thing that becomes a mystery
+process on someone's machine.
+
+Windows already solves it. `RegisterApplicationRestart` asks the Restart Manager
+to bring the process back after a crash or a hang, with a command line we choose.
+Nothing runs while the application is healthy, and nothing is left behind if it
+is deleted. It is cancelled on a clean shutdown, so a deliberate quit is never
+mistaken for a crash.
+
+The two restarts are told apart deliberately, because they mean different things.
+A self-relaunch says the fault was catchable and the process shut itself down.
+A Windows restart says the process died outright — the more serious of the two —
+and the application reports which one happened.
+
+### Refusing to restart is the harder half
+
+An application that crashes during startup, relaunches, and crashes again forever
+is strictly worse than one that stayed down: it burns a core doing it, and it is
+harder to notice and harder to stop. For a tool whose premise is not being a
+burden on the machine, that would be indefensible.
+
+So every self-restart is written to disk with its timestamp, **the record
+survives the restart** — which is the entire point, since a counter that resets on
+each crash never fires — and past a threshold inside a window the application
+stops relaunching and says so. The history is cleared once it has run long enough
+to be considered healthy, so three unrelated crashes weeks apart are never
+mistaken for a loop.
+
+Renderer reloads follow the same shape at a smaller scale: immediate for the
+first crash, because the user is looking at a blank window, then backing off, and
+capped. Nothing in a renderer holds state the next snapshot cannot rebuild, which
+is what makes reloading it free.
+
+### A collector that dies silently is the worst case
+
+A panic in the sampling thread unwinds that thread and leaves the rest of the
+process running. For a monitor that is the worst possible failure: collection
+stops, but everything still looks alive and the interface shows the last snapshot
+forever. Nothing would ever notice, because the callback that would have reported
+it is the thing that stopped.
+
+The sampler is wrapped in `catch_unwind`, which turns that silent death into a
+reportable one: `running` is cleared, the panic message is kept, and the main
+process polls for it. The application then says the collector stopped and that
+the values on screen are from before it did, instead of presenting stale numbers
+as current.
+
+### What is written down
+
+A rotating log under the user's application data, capped in size with a bounded
+number of generations — the same principle as the history database. Writes are
+**synchronous**, because the lines that matter most are the last ones before the
+process died and a buffered write loses exactly those. That is only affordable
+because the volume is deliberately tiny: lifecycle, failures, and crash detail.
+Nothing per-snapshot is ever logged.
+
+Beside it, one JSON report per crash carrying the reason, the stack, how long the
+process had been up and whether it recovered; and Electron's minidumps for native
+faults, with **uploading switched off**. Nothing about the machine leaves it.
+
+Renderer errors are forwarded to main so they reach the same log — an error that
+only ever reached a devtools console is one nobody will find afterwards — and the
+forwarding is capped, because an error inside a render loop can fire thousands of
+times a second and push the useful history out of the file.
+
+### Proving it works
+
+Recovery code that has never run is a guess. `--crash-test=main` faults the main
+process on purpose a few seconds after startup, and `--crash-test=collector`
+simulates the sampler dying. It needs an explicit command-line argument, so it
+cannot fire by accident, and it is stripped before relaunching so the restarted
+instance comes back healthy rather than faulting again forever.
+
+This is the same instinct as the telemetry probes: the repository does not trust
+that a collector reads correctly, and it should not trust that a recovery path
+works either.
+
 ## Error handling
 
 Every condition below is expected, not exceptional, and none of them stops a

@@ -162,17 +162,35 @@ impl TelemetryEngine {
         if self.state.running.swap(true, Ordering::SeqCst) {
             return Ok(());
         }
+        if let Ok(mut guard) = self.state.panic_message.lock() {
+            *guard = None;
+        }
         let state = Arc::clone(&self.state);
         let thread = std::thread::Builder::new()
             .name("task-manager-sampler".into())
             .spawn(move || {
-                run_loop(state, move |snapshot| {
-                    // NonBlocking: if JavaScript has fallen behind, drop the
-                    // snapshot rather than stalling the sampling thread and
-                    // corrupting the interval of every later sample.
-                    on_snapshot.call(snapshot, ThreadsafeFunctionCallMode::NonBlocking)
-                        == Status::Ok
-                });
+                let panic_state = Arc::clone(&state);
+                // A panic here would otherwise unwind this thread and leave the
+                // rest of the process running: collection would stop while the
+                // application still looked healthy and showed the last snapshot
+                // forever. Catching it turns a silent death into a reportable
+                // one - `running` is cleared and the message is kept, so the UI
+                // can say the collector failed instead of showing stale numbers.
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                    run_loop(state, move |snapshot| {
+                        // NonBlocking: if JavaScript has fallen behind, drop the
+                        // snapshot rather than stalling the sampling thread and
+                        // corrupting the interval of every later sample.
+                        on_snapshot.call(snapshot, ThreadsafeFunctionCallMode::NonBlocking)
+                            == Status::Ok
+                    });
+                }));
+                if let Err(payload) = result {
+                    panic_state.running.store(false, Ordering::SeqCst);
+                    if let Ok(mut guard) = panic_state.panic_message.lock() {
+                        *guard = Some(describe_panic(&payload));
+                    }
+                }
             })
             .map_err(|error| {
                 Error::new(
@@ -196,6 +214,21 @@ impl TelemetryEngine {
     #[napi(getter)]
     pub fn is_running(&self) -> bool {
         self.state.running.load(Ordering::Relaxed)
+    }
+
+    /// The panic that killed the sampling thread, or `null` if none did.
+    ///
+    /// Non-null means collection has stopped and every value the application is
+    /// showing is stale. It is a getter rather than an event because the
+    /// threadsafe function that would carry an event is exactly what stops
+    /// working when the sampler dies.
+    #[napi(getter)]
+    pub fn collector_panic(&self) -> Option<String> {
+        self.state
+            .panic_message
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 
     /// The most recent snapshot, or `null` before the first one completes.
@@ -249,6 +282,34 @@ pub fn collect_single_snapshot() -> JsSystemSnapshot {
     let state = EngineState::new(&default_config());
     let mut collectors = sampling::engine::Collectors::new();
     collectors.collect(&state)
+}
+
+/// Ask Windows to restart this application if it crashes or stops responding.
+///
+/// `command_line` is what the restarted process receives, so pass a marker the
+/// application can recognise. Returns false when Windows refused, which simply
+/// means the application will not come back by itself.
+#[napi]
+pub fn register_for_restart(command_line: String) -> bool {
+    win::restart::register_for_restart(&command_line)
+}
+
+/// Cancel the restart registration, so a deliberate quit is never mistaken for
+/// a crash.
+#[napi]
+pub fn unregister_for_restart() -> bool {
+    win::restart::unregister_for_restart()
+}
+
+/// Turn a panic payload into something worth putting in a log.
+fn describe_panic(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "collector thread panicked with a non-string payload".to_string()
+    }
 }
 
 /// Confirms the native module loaded and reports its version.

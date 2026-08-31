@@ -52,6 +52,13 @@ export const IpcChannel = {
   SaveExport: 'export:save',
   /** invoke: (text: string) => boolean */
   CopyToClipboard: 'export:copy',
+
+  /** invoke: () => DiagnosticsInfo */
+  GetDiagnostics: 'diagnostics:get',
+  /** invoke: () => void — reveal the log folder in Explorer */
+  OpenLogFolder: 'diagnostics:openLogFolder',
+  /** invoke: (message, stack, kind) => void — a renderer error, for the log */
+  ReportRendererError: 'diagnostics:rendererError',
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
@@ -63,6 +70,43 @@ export interface HistoryStatus {
   path: string;
   /** Rows currently held per retention tier. */
   tiers: HistoryTier[];
+}
+
+/** One crash the application recorded. */
+export interface CrashRecordInfo {
+  atUnixMs: number;
+  /** Which part died: `main`, `renderer`, `gpu`, `utility`, `collector`. */
+  source: string;
+  reason: string;
+  detail?: string;
+  uptimeSeconds: number;
+  /** True when the main process was going down, rather than a recovered child. */
+  fatal: boolean;
+  /** True when the application relaunched or reloaded because of this. */
+  restarted: boolean;
+}
+
+/** Where the logs are and what has gone wrong lately. */
+export interface DiagnosticsInfo {
+  logDirectory: string;
+  logFiles: { name: string; bytes: number }[];
+  /** Where Electron writes minidumps for native crashes. */
+  crashDumpDirectory: string;
+  /** Recent crashes, newest first. */
+  crashes: CrashRecordInfo[];
+  /** Restarts inside the guard's window; at the limit the app stops relaunching. */
+  recentRestarts: number;
+  maxRestarts: number;
+  /** True when Windows will relaunch the application after a hard crash. */
+  restartRegistered: boolean;
+  /** True when this instance followed a crash, however it was restarted. */
+  startedAfterCrash: boolean;
+  /**
+   * Who restarted it. `self` means the application caught a fatal error and
+   * relaunched; `windows` means the process died outright and the Restart
+   * Manager brought it back, which is the more serious of the two.
+   */
+  restartOrigin: 'self' | 'windows' | null;
 }
 
 /** What happened to a save-to-file request. */
@@ -145,4 +189,17 @@ export interface TaskManagerApi {
   saveExport(suggestedName: string, contents: string): Promise<ExportSaveResult>;
   /** Put text on the system clipboard. Returns false if it could not be set. */
   copyToClipboard(text: string): Promise<boolean>;
+
+  // --- diagnostics ---------------------------------------------------------
+  /** Where the logs live and what has crashed recently. */
+  getDiagnostics(): Promise<DiagnosticsInfo>;
+  /** Reveal the log folder in Explorer. */
+  openLogFolder(): Promise<void>;
+  /**
+   * Report a renderer-side error so it reaches the log file.
+   *
+   * The renderer has no filesystem, and an error that only ever reached its
+   * console is an error nobody will find after the fact.
+   */
+  reportRendererError(message: string, stack: string, kind: string): Promise<void>;
 }

@@ -32,6 +32,16 @@ export class TelemetryService {
   #processSubscribers = new Set<number>();
   #historyPath: string | null = null;
   #historyEnabled = false;
+  /**
+   * Polls the collector for a panic that killed its sampling thread.
+   *
+   * A thread that dies takes collection with it while leaving the process
+   * healthy, so nothing else would ever notice: the UI would keep showing the
+   * last snapshot indefinitely. This is the only way to find out, because the
+   * callback that would have reported it is the thing that stopped working.
+   */
+  #watchdog: NodeJS.Timeout | null = null;
+  #onCollectorDeath: ((message: string) => void) | null = null;
 
   constructor() {
     const native = loadNative();
@@ -56,6 +66,11 @@ export class TelemetryService {
     }
   }
 
+  /** Called once if the collector thread dies, with the panic message. */
+  onCollectorDeath(listener: (message: string) => void): void {
+    this.#onCollectorDeath = listener;
+  }
+
   start(): void {
     if (!this.#engine || this.#status.sampling) return;
     this.#engine.start((snapshot) => {
@@ -63,12 +78,38 @@ export class TelemetryService {
       this.#broadcast(snapshot);
     });
     this.#status = { ...this.#status, sampling: true };
+    this.#startWatchdog();
   }
 
   stop(): void {
     if (!this.#engine) return;
+    this.#stopWatchdog();
     this.#engine.stop();
     this.#status = { ...this.#status, sampling: false };
+  }
+
+  #startWatchdog(): void {
+    this.#stopWatchdog();
+    // Every few seconds is ample: this is checking for a permanent condition,
+    // not a transient one, and the check is a single field read.
+    this.#watchdog = setInterval(() => {
+      const message = this.#engine?.collectorPanic ?? null;
+      if (!message) return;
+      this.#stopWatchdog();
+      this.#status = {
+        ...this.#status,
+        sampling: false,
+        error: `The telemetry collector stopped: ${message}. Values shown are from before it stopped.`,
+      };
+      this.#onCollectorDeath?.(message);
+    }, 5000);
+    this.#watchdog.unref?.();
+  }
+
+  #stopWatchdog(): void {
+    if (!this.#watchdog) return;
+    clearInterval(this.#watchdog);
+    this.#watchdog = null;
   }
 
   /**

@@ -33,6 +33,8 @@ export class WidgetController {
     onQuit: () => void;
     onWidgetClosed: (webContentsId: number) => void;
     onSettingsChanged: (settings: WidgetSettings) => void;
+    /** Called whenever the widget window is created, for crash handling. */
+    onWindowCreated?: (window: BrowserWindow) => void;
   }) {
     this.#settings = options.settings;
     this.#onShowMainWindow = options.onShowMainWindow;
@@ -42,6 +44,7 @@ export class WidgetController {
       settings: options.settings,
       preloadPath: options.preloadPath,
       onClosed: options.onWidgetClosed,
+      onCreated: options.onWindowCreated,
     });
   }
 

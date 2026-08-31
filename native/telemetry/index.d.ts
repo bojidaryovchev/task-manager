@@ -30,6 +30,15 @@ export declare class TelemetryEngine {
   /** Stop sampling and join the thread. Safe to call when not running. */
   stop(): void
   get isRunning(): boolean
+  /**
+   * The panic that killed the sampling thread, or `null` if none did.
+   *
+   * Non-null means collection has stopped and every value the application is
+   * showing is stale. It is a getter rather than an event because the
+   * threadsafe function that would carry an event is exactly what stops
+   * working when the sampler dies.
+   */
+  get collectorPanic(): string | null
   /** The most recent snapshot, or `null` before the first one completes. */
   getLatestSnapshot(): JsSystemSnapshot | null
   getConfig(): JsCollectorConfig
@@ -504,3 +513,18 @@ export interface JsThermalZoneSnapshot {
 
 /** Confirms the native module loaded and reports its version. */
 export declare function nativeProbe(): string
+
+/**
+ * Ask Windows to restart this application if it crashes or stops responding.
+ *
+ * `command_line` is what the restarted process receives, so pass a marker the
+ * application can recognise. Returns false when Windows refused, which simply
+ * means the application will not come back by itself.
+ */
+export declare function registerForRestart(commandLine: string): boolean
+
+/**
+ * Cancel the restart registration, so a deliberate quit is never mistaken for
+ * a crash.
+ */
+export declare function unregisterForRestart(): boolean

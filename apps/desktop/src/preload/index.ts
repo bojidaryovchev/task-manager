@@ -39,6 +39,16 @@ const api: TaskManagerApi = {
   copyToClipboard: (text: string) =>
     ipcRenderer.invoke(IpcChannel.CopyToClipboard, String(text)),
 
+  getDiagnostics: () => ipcRenderer.invoke(IpcChannel.GetDiagnostics),
+  openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),
+  reportRendererError: (message: string, stack: string, kind: string) =>
+    ipcRenderer.invoke(
+      IpcChannel.ReportRendererError,
+      String(message),
+      String(stack),
+      String(kind),
+    ),
+
   getWidgetSettings: () => ipcRenderer.invoke(IpcChannel.GetWidgetSettings),
   setWidgetSettings: (patch: Partial<WidgetSettings>) =>
     ipcRenderer.invoke(IpcChannel.SetWidgetSettings, patch),
