@@ -59,6 +59,19 @@ export const WINDOWS_RESTART_ARGUMENT = '--restarted-by-windows';
 export const CRASH_TEST_ARGUMENT = '--crash-test';
 
 /**
+ * How long Windows requires an application to have been running before it will
+ * restart it.
+ *
+ * Documented behaviour of `RegisterApplicationRestart`: a process that crashes
+ * inside its first 60 seconds is **not** restarted, so that Windows does not
+ * loop on an application which is broken at startup. That is the same judgement
+ * the in-process guard makes, made once more a level up, and it means the
+ * Windows path covers a crash during ordinary running rather than one during
+ * launch.
+ */
+export const WINDOWS_RESTART_MINIMUM_UPTIME_MS = 60_000;
+
+/**
  * How long the application must stay up before its restart history is cleared.
  *
  * Long enough that a startup crash loop cannot reach it, short enough that
@@ -254,16 +267,25 @@ export class Resilience {
   }
 
   /**
-   * Fault on purpose if asked to, a few seconds after startup.
+   * Fault on purpose if asked to.
    *
    * The delay lets the window appear first, so what is being tested is a crash
-   * of a running application rather than one during initialisation.
+   * of a running application rather than one during initialisation. A hard
+   * crash waits longer for a reason that is not arbitrary - see
+   * `WINDOWS_RESTART_MINIMUM_UPTIME_MS`.
    */
   scheduleCrashTestIfRequested(): void {
     const argument = process.argv.find((value) => value.startsWith(`${CRASH_TEST_ARGUMENT}=`));
     if (!argument) return;
     const kind = argument.slice(CRASH_TEST_ARGUMENT.length + 1);
-    this.#host.logger.warn('crash', `crash test requested: ${kind}; faulting in 3s on purpose`);
+    const delay = kind === 'hard' ? WINDOWS_RESTART_MINIMUM_UPTIME_MS + 5000 : 3000;
+    this.#host.logger.warn(
+      'crash',
+      `crash test requested: ${kind}; faulting in ${Math.round(delay / 1000)}s on purpose` +
+        (kind === 'hard'
+          ? ' (waiting past the 60s Windows requires before it will restart anything)'
+          : ''),
+    );
 
     const timer = setTimeout(() => {
       if (kind === 'main') {
@@ -275,8 +297,16 @@ export class Resilience {
         this.recordCollectorFailure('deliberate crash test of the collector');
         return;
       }
+      if (kind === 'hard') {
+        // A real native abort, not a catchable exception. Nothing in this
+        // process handles it, which is precisely the case the Windows Restart
+        // Manager exists to cover - and the only way to find out whether that
+        // registration actually works.
+        this.#host.logger.warn('crash', 'aborting the process; Windows should restart it');
+        process.crash();
+      }
       this.#host.logger.warn('crash', `unknown crash test kind: ${kind}`);
-    }, 3000);
+    }, delay);
     timer.unref?.();
   }
 
@@ -335,7 +365,21 @@ export class Resilience {
       // Not carried forward: whoever restarts next should describe that
       // restart, not inherit the reason for this one.
       .filter((value) => value !== SELF_RESTART_ARGUMENT && value !== WINDOWS_RESTART_ARGUMENT);
-    app.relaunch({ args: [...args, SELF_RESTART_ARGUMENT] });
+    // Release the single-instance lock first. Without this the relaunched
+    // process can start while this one is still exiting, fail to take the lock,
+    // conclude another instance is already running and quit immediately - so
+    // the application appears to have crashed without recovering. It is timing
+    // dependent, which is why it survived development and only showed up in the
+    // packaged build, where the portable launcher adds enough latency to lose
+    // the race every time.
+    app.releaseSingleInstanceLock();
+    app.relaunch({
+      args: [...args, SELF_RESTART_ARGUMENT],
+      // In a portable build `process.execPath` is the copy extracted to a
+      // temporary directory. Relaunching the original executable keeps the
+      // restarted instance the same thing the user actually ran.
+      execPath: process.env.PORTABLE_EXECUTABLE_FILE || undefined,
+    });
     app.exit(1);
   }
 }
