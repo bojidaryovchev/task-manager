@@ -1,0 +1,16 @@
+# Link the MSVC C runtime statically.
+#
+# Without this the addon imports VCRUNTIME140.dll, which comes from the Visual
+# C++ Redistributable and is NOT present on a clean Windows install. Electron's
+# own executable is statically linked and starts anywhere, so the failure lands
+# exactly on the telemetry module: the application opens and reports that it
+# cannot read anything, on a machine where nothing is wrong.
+#
+# This application ships as a single executable that installs nothing, so a
+# hidden redistributable dependency is a defect rather than a deployment note.
+#
+# Safe for a cdylib here because nothing crosses the CRT boundary: allocations
+# made in Rust are freed in Rust, and everything reaching JavaScript is
+# marshalled by N-API rather than handed over as a raw pointer.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

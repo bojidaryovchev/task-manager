@@ -206,13 +206,27 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
 
 // A second instance should focus the running one rather than start a second
 // sampling engine against the same machine.
+// The log is opened before anything else, including the single-instance check,
+// so that every way this process can exit leaves a trace. It previously started
+// after that check, which meant the one exit path that produces no window and no
+// message also produced no evidence - the symptom being a spinner and then
+// nothing at all, with nowhere to look.
+logger = new Logger();
+
 if (!app.requestSingleInstanceLock()) {
+  // Not an error: a second launch is meant to surface the running window rather
+  // than start a second sampling engine. It is logged because from the outside
+  // it is indistinguishable from a silent failure to start, and because a stale
+  // lock held by a process that is wedged looks exactly the same.
+  logger.info(
+    'app',
+    'another instance already holds the single-instance lock; asking it to show itself and exiting',
+  );
   app.quit();
 } else {
-  // Logging and crash handling come first, before any of the work that could
-  // fail. A crash during startup is the one most worth having a record of, and
-  // the crash reporter has to be started before the app is ready to catch it.
-  logger = new Logger();
+  // Crash handling comes next, before any of the work that could fail. A crash
+  // during startup is the one most worth having a record of, and the crash
+  // reporter has to be started before the app is ready to catch it.
   guard = new CrashGuard(logger.directory, logger);
   resilience = new Resilience({
     logger,
