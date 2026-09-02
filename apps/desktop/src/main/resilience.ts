@@ -1,4 +1,6 @@
-import { app, BrowserWindow, crashReporter, type RenderProcessGoneDetails } from 'electron';
+import { release } from 'node:os';
+import { app, BrowserWindow, crashReporter, dialog, type RenderProcessGoneDetails } from 'electron';
+import { describeErrorCode } from '@shared/error-codes.js';
 import { CrashGuard, reloadDelayMs, type CrashRecord } from './crash-guard.js';
 import type { Logger } from './logger.js';
 
@@ -86,6 +88,40 @@ export interface ResilienceHost {
   onBeforeRelaunch: () => void;
 }
 
+/**
+ * Tell the user, with no window and no renderer.
+ *
+ * `dialog.showErrorBox` draws a plain Win32 message box. It works before the
+ * app is ready, without a window, and without a working GPU - which is the
+ * whole point, because those are exactly the situations where the application
+ * would otherwise disappear without saying anything.
+ *
+ * It is deliberately written to be photographed: the code first, then what
+ * happened, then where the log is.
+ */
+function showFatalBox(title: string, code: string, detail: string, logPath: string): void {
+  try {
+    dialog.showErrorBox(
+      title,
+      [
+        `${code} — ${describeErrorCode(code)?.title ?? 'Unexpected failure'}`,
+        '',
+        describeErrorCode(code)?.meaning ?? '',
+        '',
+        `What to do: ${describeErrorCode(code)?.action ?? 'Report this code.'}`,
+        '',
+        `Task Manager ${app.getVersion()} · Electron ${process.versions.electron} · Windows ${release()}`,
+        '',
+        detail.slice(0, 1500),
+        '',
+        `Log: ${logPath}`,
+      ].join('\n'),
+    );
+  } catch {
+    // Nothing left to tell them with. The log still has it.
+  }
+}
+
 export class Resilience {
   #host: ResilienceHost;
   #startedAtMs = Date.now();
@@ -93,6 +129,15 @@ export class Resilience {
   #rendererCrashes = new Map<number, number>();
   #healthyTimer: NodeJS.Timeout | null = null;
   #relaunching = false;
+  /**
+   * Whether a window has ever been on screen this run.
+   *
+   * A crash after the interface appeared can be recovered from quietly - the
+   * application blinks and comes back. A crash before it appeared cannot: the
+   * user has seen nothing at all, and a silent relaunch that fails the same
+   * way just repeats the nothing. That case gets told outright.
+   */
+  #windowEverShown = false;
 
   constructor(host: ResilienceHost) {
     this.#host = host;
@@ -194,6 +239,9 @@ export class Resilience {
    */
   watchWindow(window: BrowserWindow, label: string): void {
     const id = window.webContents.id;
+    window.once('ready-to-show', () => {
+      this.#windowEverShown = true;
+    });
 
     window.webContents.on('render-process-gone', (_event, details: RenderProcessGoneDetails) => {
       const attempt = (this.#rendererCrashes.get(id) ?? 0) + 1;
@@ -351,8 +399,29 @@ export class Resilience {
         'TM-7007',
         `restarted ${this.#host.guard.recentRestartCount()} times recently; staying down instead of looping`,
       );
+      // The application is about to vanish for good. Leaving without a word is
+      // the single worst thing it could do here: from the outside it is
+      // indistinguishable from never having started.
+      showFatalBox(
+        'Task Manager has stopped trying to restart',
+        'TM-7007',
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+        this.#host.logger.path,
+      );
       app.exit(1);
       return;
+    }
+
+    // A crash before anything was on screen would otherwise relaunch into the
+    // same crash, invisibly, until the guard gives up - the user watching a
+    // spinner and then nothing, several times over.
+    if (!this.#windowEverShown) {
+      showFatalBox(
+        'Task Manager could not finish starting',
+        'TM-7005',
+        error instanceof Error ? (error.stack ?? error.message) : String(error),
+        this.#host.logger.path,
+      );
     }
 
     this.#host.logger.warn('TM-7005', 'relaunching after a fatal error');
