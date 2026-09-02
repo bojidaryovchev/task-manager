@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DiagnosticsInfo } from '@shared/ipc';
+import { describeErrorCode } from '@shared/error-codes';
 import { Field, Note, Panel } from './primitives.js';
 
 /**
@@ -122,6 +123,12 @@ export function Diagnostics(): React.JSX.Element {
                   }
                 >
                   {crash.source}
+                </span>
+                <span
+                  className="shrink-0 rounded bg-surface-0 px-1 font-mono text-[10px] text-text-secondary"
+                  title={describeErrorCode(crash.code)?.meaning ?? 'Code from a newer version.'}
+                >
+                  {crash.code}
                 </span>
                 <span className="text-text-primary">{crash.reason}</span>
                 <span className="text-text-muted">

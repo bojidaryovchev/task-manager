@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { ErrorCode } from '@shared/error-codes.js';
 import type { Logger } from './logger.js';
 
 /**
@@ -41,6 +42,14 @@ const MAX_REPORTS = 20;
  * first is not.
  */
 export interface CrashRecord {
+  /**
+   * The error code for this kind of crash, e.g. `TM-7001`.
+   *
+   * Carried on the record rather than only written to the log, so it reaches
+   * the crash report on disk and the interface as well - the two places someone
+   * actually looks when reporting a problem.
+   */
+  code: ErrorCode;
   atUnixMs: number;
   /** Which part died: `main`, `renderer`, `gpu`, `utility`, `collector`. */
   source: string;
@@ -100,7 +109,7 @@ export class CrashGuard {
       writeFileSync(temporary, JSON.stringify(this.#state), 'utf8');
       renameSync(temporary, this.#statePath);
     } catch (error) {
-      this.#logger.warn('crash', 'could not persist restart state', error);
+      this.#logger.warn('TM-7010', 'could not persist restart state', error);
     }
   }
 
@@ -147,7 +156,7 @@ export class CrashGuard {
   /** Write a crash report and return it. */
   record(record: CrashRecord): CrashRecord {
     this.#logger.error(
-      'crash',
+      record.code,
       `${record.source} ${record.reason} after ${record.uptimeSeconds}s${record.fatal ? ' (fatal)' : ''}`,
       record.detail,
     );
@@ -156,7 +165,7 @@ export class CrashGuard {
       writeFileSync(join(this.#directory, name), JSON.stringify(record, null, 2), 'utf8');
       this.#pruneReports();
     } catch (error) {
-      this.#logger.warn('crash', 'could not write crash report', error);
+      this.#logger.warn('TM-7009', 'could not write crash report', error);
     }
     return record;
   }
@@ -214,6 +223,9 @@ function asCrashRecord(value: unknown): CrashRecord | null {
   if (typeof candidate.atUnixMs !== 'number') return null;
   if (typeof candidate.source !== 'string' || typeof candidate.reason !== 'string') return null;
   return {
+    // A report written by an older version has no code; it is still a real
+    // crash and is shown, just without one to look up.
+    code: (typeof candidate.code === 'string' ? candidate.code : 'TM-7005') as ErrorCode,
     atUnixMs: candidate.atUnixMs,
     source: candidate.source,
     reason: candidate.reason,

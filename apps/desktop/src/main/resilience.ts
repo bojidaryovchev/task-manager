@@ -138,7 +138,7 @@ export class Resilience {
       });
       this.#host.logger.info('crash', `minidumps: ${app.getPath('crashDumps')}`);
     } catch (error) {
-      this.#host.logger.warn('crash', 'crash reporter could not start', error);
+      this.#host.logger.warn('TM-7008', 'crash reporter could not start', error);
     }
   }
 
@@ -152,6 +152,7 @@ export class Resilience {
       // broken anything, so it is recorded without bringing the application
       // down over it.
       this.#host.guard.record({
+        code: 'TM-7006',
         atUnixMs: Date.now(),
         source: 'main',
         reason: 'unhandledRejection',
@@ -167,6 +168,7 @@ export class Resilience {
       // clean exit is not a crash.
       if (details.reason === 'clean-exit') return;
       this.#host.guard.record({
+        code: 'TM-7004',
         atUnixMs: Date.now(),
         source: details.type,
         reason: details.reason,
@@ -208,6 +210,8 @@ export class Resilience {
       if (deliberate) return;
 
       this.#host.guard.record({
+        // Recovered or abandoned: the same event means different things.
+        code: recoverable ? 'TM-7001' : 'TM-7002',
         atUnixMs: Date.now(),
         source: 'renderer',
         reason: details.reason,
@@ -219,7 +223,7 @@ export class Resilience {
 
       if (!recoverable) {
         this.#host.logger.error(
-          'crash',
+          'TM-7002',
           `${label} renderer has crashed ${attempt} times; not reloading it again`,
         );
         return;
@@ -227,7 +231,7 @@ export class Resilience {
 
       const delay = reloadDelayMs(attempt);
       this.#host.logger.warn(
-        'crash',
+        'TM-7001',
         `reloading ${label} renderer in ${delay}ms after ${details.reason}`,
       );
       const timer = setTimeout(() => {
@@ -235,7 +239,7 @@ export class Resilience {
         try {
           window.reload();
         } catch (error) {
-          this.#host.logger.error('crash', `could not reload ${label}`, error);
+          this.#host.logger.error('TM-7002', `could not reload ${label}`, error);
         }
       }, delay);
       timer.unref?.();
@@ -244,7 +248,7 @@ export class Resilience {
     window.webContents.on('unresponsive', () => {
       // Not a crash: the renderer is alive but not answering. Recorded because
       // it is what a user reports as "it froze", and the log should agree.
-      this.#host.logger.warn('crash', `${label} renderer stopped responding`);
+      this.#host.logger.warn('TM-7003', `${label} renderer stopped responding`);
     });
     window.webContents.on('responsive', () => {
       this.#host.logger.info('crash', `${label} renderer is responding again`);
@@ -256,6 +260,7 @@ export class Resilience {
   /** Record a failure the collector reported about itself. */
   recordCollectorFailure(message: string): CrashRecord {
     return this.#host.guard.record({
+      code: 'TM-2003',
       atUnixMs: Date.now(),
       source: 'collector',
       reason: 'panic',
@@ -280,7 +285,7 @@ export class Resilience {
     const kind = argument.slice(CRASH_TEST_ARGUMENT.length + 1);
     const delay = kind === 'hard' ? WINDOWS_RESTART_MINIMUM_UPTIME_MS + 5000 : 3000;
     this.#host.logger.warn(
-      'crash',
+      'TM-7005',
       `crash test requested: ${kind}; faulting in ${Math.round(delay / 1000)}s on purpose` +
         (kind === 'hard'
           ? ' (waiting past the 60s Windows requires before it will restart anything)'
@@ -302,10 +307,10 @@ export class Resilience {
         // process handles it, which is precisely the case the Windows Restart
         // Manager exists to cover - and the only way to find out whether that
         // registration actually works.
-        this.#host.logger.warn('crash', 'aborting the process; Windows should restart it');
+        this.#host.logger.warn('TM-7005', 'aborting the process on purpose; Windows should restart it');
         process.crash();
       }
-      this.#host.logger.warn('crash', `unknown crash test kind: ${kind}`);
+      this.#host.logger.warn('TM-7005', `unknown crash test kind: ${kind}`);
     }, delay);
     timer.unref?.();
   }
@@ -330,6 +335,8 @@ export class Resilience {
   #onFatal(source: string, reason: string, error: unknown): void {
     const allowed = this.#host.guard.shouldRestart();
     this.#host.guard.record({
+      // Relaunching or giving up: the distinction is the whole decision.
+      code: allowed ? 'TM-7005' : 'TM-7007',
       atUnixMs: Date.now(),
       source,
       reason,
@@ -341,20 +348,20 @@ export class Resilience {
 
     if (!allowed) {
       this.#host.logger.error(
-        'crash',
+        'TM-7007',
         `restarted ${this.#host.guard.recentRestartCount()} times recently; staying down instead of looping`,
       );
       app.exit(1);
       return;
     }
 
-    this.#host.logger.warn('crash', 'relaunching after a fatal error');
+    this.#host.logger.warn('TM-7005', 'relaunching after a fatal error');
     this.#host.guard.noteRestart();
     this.#relaunching = true;
     try {
       this.#host.onBeforeRelaunch();
     } catch (stopError) {
-      this.#host.logger.warn('crash', 'collector did not stop cleanly', stopError);
+      this.#host.logger.warn('TM-2003', 'collector did not stop cleanly', stopError);
     }
     // The marker tells the new instance it is a restart rather than a launch.
     const args = process.argv

@@ -23,6 +23,7 @@ const silent = {
 
 function record(overrides: Partial<CrashRecord> = {}): CrashRecord {
   return {
+    code: 'TM-7005',
     atUnixMs: Date.now(),
     source: 'main',
     reason: 'uncaughtException',

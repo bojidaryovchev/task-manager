@@ -72,8 +72,26 @@ export interface HistoryStatus {
   tiers: HistoryTier[];
 }
 
+/**
+ * A startup step that failed.
+ *
+ * Startup is deliberately survivable step by step, so the application can be
+ * running and useful while one part of it is broken. These are what it shows
+ * instead of pretending everything is fine.
+ */
+export interface StartupFailure {
+  /** The error code, e.g. `TM-1008`. Stable, and looked up in the code list. */
+  code: string;
+  /** Which step: `settings`, `history`, `tray`, `sampling`, and so on. */
+  step: string;
+  message: string;
+  detail?: string;
+}
+
 /** One crash the application recorded. */
 export interface CrashRecordInfo {
+  /** The error code for this crash, e.g. `TM-7001`. Looked up in the code list. */
+  code: string;
   atUnixMs: number;
   /** Which part died: `main`, `renderer`, `gpu`, `utility`, `collector`. */
   source: string;
@@ -107,6 +125,8 @@ export interface DiagnosticsInfo {
    * Manager brought it back, which is the more serious of the two.
    */
   restartOrigin: 'self' | 'windows' | null;
+  /** Startup steps that failed this session. Empty on a clean start. */
+  startupFailures: StartupFailure[];
 }
 
 /** What happened to a save-to-file request. */

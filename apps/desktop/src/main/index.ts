@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { release } from 'node:os';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { CollectorConfig } from '@task-manager/telemetry-types';
-import { IpcChannel, type DiagnosticsInfo } from '@shared/ipc';
+import { IpcChannel, type DiagnosticsInfo, type StartupFailure } from '@shared/ipc';
+import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
 import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
 import { ExportService } from './export-service.js';
@@ -34,6 +36,8 @@ let resilience: Resilience | null = null;
 let guard: CrashGuard | null = null;
 /** Whether Windows accepted the restart registration, for the diagnostics view. */
 let restartRegistered = false;
+/** Startup steps that failed, with why, so the interface can show them. */
+const startupFailures: StartupFailure[] = [];
 /** Set on the way out so window close handlers do not fight the quit. */
 let quitting = false;
 
@@ -55,6 +59,75 @@ function iconPath(): string | undefined {
 /** Where the history database lives: alongside the other per-user app data. */
 function historyPath(): string {
   return join(app.getPath('userData'), 'history.db');
+}
+
+/**
+ * Run one startup step, surviving its failure.
+ *
+ * Startup used to be a single unguarded sequence with the window created at the
+ * end, so a throw anywhere in it - a corrupt settings file, a history database
+ * that will not open, a native module misbehaving on an unfamiliar machine -
+ * killed the whole application before anything was on screen. The crash handler
+ * then relaunched it, the same step failed again, and after a few attempts the
+ * loop guard stopped it for good. From the outside that is a spinner and then
+ * nothing, permanently, on a machine where most of the application would have
+ * worked fine.
+ *
+ * That also contradicted the rule the rest of the application follows: when a
+ * subsystem cannot do its job, say so and carry on rather than showing nothing.
+ * Every step is now individually survivable, and the window is created first, so
+ * there is always something on screen to carry the explanation.
+ */
+function step<T>(code: ErrorCode, name: string, run: () => T): T | null {
+  try {
+    return run();
+  } catch (error) {
+    logger?.error(code, `${name} failed; continuing without it`, error);
+    startupFailures.push({
+      code,
+      step: name,
+      message: error instanceof Error ? error.message : String(error),
+      detail: error instanceof Error ? (error.stack ?? '') : '',
+    });
+    return null;
+  }
+}
+
+/**
+ * Everything worth knowing about a startup that went wrong.
+ *
+ * Written to be screenshotted and sent to someone else, so it names the
+ * application version, the machine and every failed step rather than assuming
+ * whoever reads it can run a debugger.
+ */
+function startupFailureReport(): string {
+  const lines = [
+    `Task Manager ${app.getVersion()}`,
+    `Electron ${process.versions.electron} · Windows ${release()} · ${process.arch}`,
+    '',
+    `${startupFailures.length} startup step(s) failed:`,
+    '',
+  ];
+  for (const failure of startupFailures) {
+    lines.push(`• ${failure.step}: ${failure.message}`);
+  }
+  lines.push('', `Full log: ${logger?.path ?? '(logging unavailable)'}`);
+  return lines.join('\n');
+}
+
+/**
+ * Show the failure without a renderer.
+ *
+ * `dialog.showErrorBox` draws a plain Win32 message box, so it works when the
+ * window, the GPU process or the whole renderer could not be brought up - the
+ * cases where the application would otherwise appear to do nothing at all.
+ */
+function reportStartupFailureNatively(): void {
+  try {
+    dialog.showErrorBox('Task Manager could not start properly', startupFailureReport());
+  } catch {
+    // Nothing left to report with. The log still has it.
+  }
 }
 
 function createMainWindow(): BrowserWindow {
@@ -173,6 +246,7 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     restartRegistered,
     startedAfterCrash: resilience?.wasRestartedAfterCrash ?? false,
     restartOrigin: resilience?.restartOrigin ?? null,
+    startupFailures,
   }));
   ipcMain.handle(IpcChannel.OpenLogFolder, () => {
     if (logger) void shell.openPath(logger.directory);
@@ -182,7 +256,11 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     (_event, message: unknown, stack: unknown, kind: unknown) => {
       // The renderer cannot write to disk, so an error there would otherwise
       // live only in a devtools console nobody has open.
-      logger?.error('renderer', `${String(kind)}: ${String(message)}`, String(stack));
+      logger?.error(
+        String(kind).includes('rejection') ? 'TM-8002' : 'TM-8001',
+        `${String(kind)}: ${String(message)}`,
+        String(stack),
+      );
     },
   );
 
@@ -247,53 +325,91 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showMainWindow());
 
   void app.whenReady().then(() => {
-    app.setAppUserModelId('dev.taskmanager.app');
+    step('TM-1001', 'app id', () => app.setAppUserModelId('dev.taskmanager.app'));
 
-    settings = new SettingsStore();
-    telemetry = new TelemetryService();
+    // The window comes first, before anything that can fail. Whatever else goes
+    // wrong below, there is something on screen to say so - which is the whole
+    // difference between an application that reports a problem and one that
+    // appears not to start at all.
+    mainWindow = step('TM-1002', 'main window', () => createMainWindow());
 
-    widget = new WidgetController({
-      settings,
-      preloadPath,
-      onShowMainWindow: showMainWindow,
-      onQuit: quit,
-      onWidgetClosed: (webContentsId) => telemetry?.releaseWindow(webContentsId),
-      onSettingsChanged: () => tray?.refreshMenu(),
-      onWindowCreated: (window) => resilience?.watchWindow(window, 'widget'),
-    });
+    settings = step('TM-1003', 'settings', () => new SettingsStore());
+    // The store falls back to defaults rather than refusing to start, so a
+    // corrupt or unwritable settings file never reaches the step above as a
+    // throw. It reports what it swallowed instead.
+    for (const problem of settings?.takeProblems() ?? []) {
+      logger?.warn(problem.code, 'settings could not be read or written', problem.message);
+      startupFailures.push({
+        code: problem.code,
+        step: 'settings',
+        message: problem.message,
+      });
+    }
+    telemetry = step('TM-1004', 'telemetry service', () => new TelemetryService());
+
+    if (settings) {
+      widget = step('TM-1005', 'widget controller', () => new WidgetController({
+        settings: settings as SettingsStore,
+        preloadPath,
+        onShowMainWindow: showMainWindow,
+        onQuit: quit,
+        onWidgetClosed: (webContentsId) => telemetry?.releaseWindow(webContentsId),
+        onSettingsChanged: () => tray?.refreshMenu(),
+        onWindowCreated: (window) => resilience?.watchWindow(window, 'widget'),
+      }));
+    }
 
     // Ask Windows to bring the application back if it crashes hard enough that
     // nothing in this process survives to do it. Costs nothing while healthy.
-    const native = loadNative().module;
-    if (native) {
+    step('TM-1006', 'restart registration', () => {
+      const native = loadNative().module;
+      if (!native) return;
       restartRegistered = native.registerForRestart(WINDOWS_RESTART_ARGUMENT);
-      const registered = restartRegistered;
       logger?.info(
         'crash',
-        registered
+        restartRegistered
           ? 'registered with the Windows Restart Manager'
           : 'Windows declined the restart registration; the application will not relaunch itself after a hard crash',
       );
-    }
+    });
 
     // A collector thread that dies leaves the process healthy and the numbers
     // frozen, so it is reported rather than left to look like a working app.
-    telemetry.onCollectorDeath((message) => {
+    telemetry?.onCollectorDeath((message) => {
       resilience?.recordCollectorFailure(message);
     });
 
-    registerIpc(telemetry, widget);
-    // History before start, so the very first sample is recorded.
-    telemetry.setHistory(historyPath(), settings.history.enabled);
-    telemetry.start();
+    if (telemetry && widget) {
+      step('TM-1007', 'ipc', () => registerIpc(telemetry as TelemetryService, widget as WidgetController));
+    }
+    // History before start, so the very first sample is recorded. A database
+    // that will not open must not stop the application from measuring anything.
+    step('TM-1008', 'history', () => telemetry?.setHistory(historyPath(), settings?.history.enabled ?? false));
+    step('TM-1009', 'sampling', () => telemetry?.start());
 
-    tray = new AppTray({ widget, onShowMainWindow: showMainWindow });
-    tray.create(iconPath());
-    // The tray tooltip consumes the same snapshots as every other presentation.
-    telemetry.subscribe((snapshot) => tray?.update(snapshot));
+    step('TM-1010', 'tray', () => {
+      if (!widget) return;
+      tray = new AppTray({ widget, onShowMainWindow: showMainWindow });
+      tray.create(iconPath());
+      // The tray tooltip consumes the same snapshots as every other presentation.
+      telemetry?.subscribe((snapshot) => tray?.update(snapshot));
+    });
 
-    mainWindow = createMainWindow();
-    widget.restore();
+    step('TM-1011', 'widget restore', () => widget?.restore());
+
+    if (startupFailures.length > 0) {
+      logger?.warn(
+        'TM-1012',
+        `started with ${startupFailures.length} failed step(s): ${startupFailures.map((f) => f.step).join(', ')}`,
+      );
+      // When the window itself could not be created there is no interface to
+      // carry the message, and a native message box is the only thing left that
+      // can. It needs no renderer, no GPU and no window, which is exactly the
+      // situation it exists for - and it can be screenshotted and sent on.
+      if (!mainWindow) reportStartupFailureNatively();
+    } else {
+      logger?.info('startup', 'all startup steps completed');
+    }
 
     // Only when explicitly asked on the command line; see resilience.ts.
     resilience?.scheduleCrashTestIfRequested();
@@ -323,11 +439,14 @@ if (!app.requestSingleInstanceLock()) {
     try {
       loadNative().module?.unregisterForRestart();
     } catch (error) {
-      logger?.warn('crash', 'could not cancel the restart registration', error);
+      logger?.warn('TM-1006', 'could not cancel the restart registration', error);
     }
     telemetry?.stop();
     tray?.destroy();
     settings?.flush();
+    for (const problem of settings?.takeProblems() ?? []) {
+      logger?.warn(problem.code, 'settings could not be saved on the way out', problem.message);
+    }
     logger?.info('app', 'shutting down cleanly');
   });
 }

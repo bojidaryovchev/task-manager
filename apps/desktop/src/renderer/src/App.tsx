@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { telemetryStore } from './lib/telemetry-store.js';
 import { useNativeStatus } from './lib/hooks.js';
 import { Sidebar, type PageId } from './components/Sidebar.js';
+import { StartupBanner } from './components/StartupBanner.js';
 import { OverviewPage } from './pages/Overview.js';
 import { CpuPage } from './pages/Cpu.js';
 import { MemoryPage } from './pages/Memory.js';
@@ -61,7 +62,8 @@ export function App(): React.JSX.Element {
   return (
     <div className="flex h-full w-full bg-surface-0">
       <Sidebar current={page} onNavigate={setPage} />
-      <main className="min-w-0 flex-1 overflow-hidden">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <StartupBanner />
         {page === 'overview' && <OverviewPage />}
         {page === 'cpu' && <CpuPage />}
         {page === 'memory' && <MemoryPage />}

@@ -149,6 +149,13 @@ pub struct Collectors {
     /// touches the disk.
     history: Option<HistoryStore>,
     history_opened: bool,
+    /// Why the history database could not be opened, when it could not.
+    ///
+    /// Failing to open it used to be swallowed entirely: recording simply never
+    /// happened, the History page stayed empty, and nothing anywhere said why.
+    /// A monitor that quietly stops recording is the same class of problem as
+    /// one that quietly shows stale numbers.
+    history_error: Option<String>,
     clock: MonotonicClock,
     last_monotonic_ms: Option<f64>,
 }
@@ -193,6 +200,7 @@ impl Collectors {
             pdh_cpu,
             history: None,
             history_opened: false,
+            history_error: None,
             clock: MonotonicClock::new(),
             last_monotonic_ms: None,
         }
@@ -390,6 +398,19 @@ impl Collectors {
             &gpu_sample,
         );
 
+        // Recording that never started is a state worth reporting: the live
+        // values are fine, but nothing is being kept, and only the collector
+        // knows that.
+        if let Some(error) = self.history_error.clone() {
+            issues.push(JsCollectorIssue {
+                subsystem: "history".into(),
+                code: "TM-3001".into(),
+                message: format!(
+                    "history database could not be opened; nothing is being recorded ({error})"
+                ),
+            });
+        }
+
         let sequence = state.sequence.fetch_add(1, Ordering::Relaxed);
 
         JsSystemSnapshot {
@@ -519,12 +540,22 @@ impl Collectors {
             // its file handle is released.
             self.history = None;
             self.history_opened = false;
+            self.history_error = None;
             return;
         };
 
         if !self.history_opened {
             self.history_opened = true;
-            self.history = HistoryStore::open(std::path::Path::new(&path)).ok();
+            match HistoryStore::open(std::path::Path::new(&path)) {
+                Ok(store) => {
+                    self.history = Some(store);
+                    self.history_error = None;
+                }
+                Err(error) => {
+                    self.history = None;
+                    self.history_error = Some(format!("{path}: {error}"));
+                }
+            }
         }
         let Some(history) = self.history.as_mut() else {
             return;

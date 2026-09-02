@@ -1,6 +1,7 @@
 import { appendFileSync, mkdirSync, readdirSync, renameSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
+import { describeErrorCode, type ErrorCode } from '@shared/error-codes.js';
 
 /**
  * The application's log file.
@@ -57,16 +58,31 @@ export class Logger {
     return this.#directory;
   }
 
+  /**
+   * A lifecycle line. No code, because it describes the application working.
+   */
   info(category: string, message: string, detail?: unknown): void {
     this.#write('info', category, message, detail);
   }
 
-  warn(category: string, message: string, detail?: unknown): void {
-    this.#write('warn', category, message, detail);
+  /**
+   * Something went wrong, identified by a code.
+   *
+   * The code is required rather than optional so a failure cannot be logged
+   * anonymously: every warning and error in this application can be looked up,
+   * searched for, and quoted from a screenshot without sending a log file.
+   */
+  warn(code: ErrorCode, message: string, detail?: unknown): void {
+    this.#writeCoded('warn', code, message, detail);
   }
 
-  error(category: string, message: string, detail?: unknown): void {
-    this.#write('error', category, message, detail);
+  error(code: ErrorCode, message: string, detail?: unknown): void {
+    this.#writeCoded('error', code, message, detail);
+  }
+
+  #writeCoded(level: LogLevel, code: ErrorCode, message: string, detail?: unknown): void {
+    const definition = describeErrorCode(code);
+    this.#write(level, `${definition?.subsystem ?? 'app'} ${code}`, message, detail);
   }
 
   #write(level: LogLevel, category: string, message: string, detail?: unknown): void {

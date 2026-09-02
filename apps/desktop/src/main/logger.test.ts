@@ -63,7 +63,7 @@ describe('Logger', () => {
   it('writes a line that is on disk immediately', () => {
     // Not "eventually": the process this is describing may be about to die.
     const logger = new Logger(directory);
-    logger.error('crash', 'something broke', new Error('boom'));
+    logger.error('TM-7005', 'something broke', new Error('boom'));
     expect(readFileSync(logger.path, 'utf8')).toContain('something broke');
   });
 
@@ -94,6 +94,6 @@ describe('Logger', () => {
     // It is called from inside error handlers. Throwing there would replace the
     // failure being reported with a different one.
     const logger = new Logger(join(directory, 'nested', 'deeper'));
-    expect(() => logger.error('crash', 'still works')).not.toThrow();
+    expect(() => logger.error('TM-9002', 'still works')).not.toThrow();
   });
 });

@@ -39,10 +39,27 @@ const DEFAULTS: AppSettings = {
 
 const WRITE_DEBOUNCE_MS = 400;
 
+/** The codes this store can raise. */
+export type SettingsProblemCode = 'TM-4001' | 'TM-4002';
+
+/** A first run has no settings file, which is not a problem worth reporting. */
+function isMissingFile(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT';
+}
+
 export class SettingsStore {
   #path: string;
   #settings: AppSettings;
   #writeTimer: NodeJS.Timeout | null = null;
+  /**
+   * Failures this store swallowed, so someone else can report them.
+   *
+   * Falling back to defaults rather than refusing to start is the right
+   * behaviour, but doing it silently is not: preferences vanish and nothing
+   * anywhere says why. The store keeps working on its own and hands the reason
+   * to whoever owns the log.
+   */
+  #problems: { code: SettingsProblemCode; message: string }[] = [];
 
   constructor(filePath?: string) {
     this.#path = filePath ?? join(app.getPath('userData'), 'settings.json');
@@ -51,6 +68,13 @@ export class SettingsStore {
 
   get path(): string {
     return this.#path;
+  }
+
+  /** Problems encountered so far, and cleared once read. */
+  takeProblems(): { code: SettingsProblemCode; message: string }[] {
+    const problems = this.#problems;
+    this.#problems = [];
+    return problems;
   }
 
   get widget(): WidgetSettings {
@@ -97,9 +121,16 @@ export class SettingsStore {
         widget: normaliseWidgetSettings(source.widget),
         history: { enabled: source.history?.enabled !== false },
       };
-    } catch {
+    } catch (error) {
       // Missing on first run, and unreadable or corrupt if something went wrong.
-      // Either way the right answer is defaults rather than refusing to start.
+      // Either way the right answer is defaults rather than refusing to start -
+      // but only a first run is unremarkable, so the rest is reported.
+      if (!isMissingFile(error)) {
+        this.#problems.push({
+          code: 'TM-4001',
+          message: `${this.#path}: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
       return { widget: { ...DEFAULTS.widget }, history: { ...DEFAULTS.history } };
     }
   }
@@ -120,8 +151,14 @@ export class SettingsStore {
       const temporary = `${this.#path}.tmp`;
       writeFileSync(temporary, JSON.stringify(this.#settings, null, 2), 'utf8');
       renameSync(temporary, this.#path);
-    } catch {
-      // Losing a settings write is not worth taking the application down for.
+    } catch (error) {
+      // Losing a settings write is not worth taking the application down for,
+      // but it does mean everything the user changes this session disappears
+      // when they close it, which they should be told rather than discover.
+      this.#problems.push({
+        code: 'TM-4002',
+        message: `${this.#path}: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
   }
 }

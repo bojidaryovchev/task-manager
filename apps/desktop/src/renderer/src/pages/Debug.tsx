@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { formatMilliseconds, formatPercent, formatRaw, formatTimeOfDay } from '@task-manager/shared';
 import { Field, Note, PageShell, Panel } from '../components/primitives.js';
 import { Diagnostics } from '../components/Diagnostics.js';
+import { ErrorCodeReference } from '../components/ErrorCodeReference.js';
 import { useCollectorConfig, useHostInfo, useNativeStatus, useSnapshot } from '../lib/hooks.js';
 import { telemetryStore } from '../lib/telemetry-store.js';
 
@@ -317,6 +318,10 @@ export function DebugPage(): React.JSX.Element {
 
       <div className="mt-4">
         <Diagnostics />
+      </div>
+
+      <div className="mt-4">
+        <ErrorCodeReference />
       </div>
 
       <Note>
