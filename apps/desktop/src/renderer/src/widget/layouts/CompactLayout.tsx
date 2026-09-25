@@ -40,7 +40,10 @@ const CompactRow = memo(function CompactRow({
           <div className="widget-bar-track">
             <div
               className="widget-bar-fill"
-              style={{ width: `${metric.fraction * 100}%`, background: metric.accent }}
+              style={{
+                transform: `translateX(${(metric.fraction - 1) * 100}%)`,
+                background: metric.accent,
+              }}
             />
           </div>
         )}

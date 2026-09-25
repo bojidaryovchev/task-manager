@@ -91,6 +91,16 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/* A bar's fill is the track's full width, slid in from the left so that the
+   part showing is the reading: a transform, which the compositor moves
+   without laying the page out again on every frame. The widget's bars do the
+   same (.widget-bar-fill), and both stop moving for reduced motion there. */
+.bar-fill {
+  width: 100%;
+  height: 100%;
+  transition: transform 180ms linear;
+}
+
 /* ---------------------------------------------------------------------------
    Desktop widget
 
@@ -193,10 +203,24 @@ body {
   overflow: hidden;
 }
 
+/* The fill is the track's full width, slid in from the left so that the part
+   showing is the reading. Sliding is a transform, which the compositor does
+   without laying the widget out again on every frame; resizing was not, and
+   scaling would squash the rounded end. The track's clipping rounds the left
+   end. Linear, because it travels from one measurement to the next and has
+   no reason to look as though it speeds up or slows down. */
 .widget-bar-fill {
+  width: 100%;
   height: 100%;
   border-radius: 999px;
-  transition: width 180ms linear;
+  transition: transform 180ms linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .widget-bar-fill,
+  .bar-fill {
+    transition: none;
+  }
 }
 
 .widget-unavailable {

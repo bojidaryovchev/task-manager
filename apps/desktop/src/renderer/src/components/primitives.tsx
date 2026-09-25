@@ -132,12 +132,8 @@ export function Bar({
       style={{ height, background }}
     >
       <div
-        style={{
-          width: `${clamped * 100}%`,
-          height: '100%',
-          background: color,
-          transition: 'width 180ms linear',
-        }}
+        className="bar-fill"
+        style={{ transform: `translateX(${(clamped - 1) * 100}%)`, background: color }}
       />
     </div>
   );
