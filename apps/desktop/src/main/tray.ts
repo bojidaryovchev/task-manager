@@ -127,7 +127,9 @@ export class AppTray {
   refreshMenu(): void {
     if (!this.#tray) return;
     this.#tray.setContextMenu(
-      Menu.buildFromTemplate(this.#widget.buildMenuTemplate('tray', this.#menuItems())),
+      Menu.buildFromTemplate(
+        this.#widget.buildMenuTemplate('tray', { options: this.#optionItems(), actions: [] }),
+      ),
     );
   }
 
@@ -228,7 +230,7 @@ export class AppTray {
     }
   }
 
-  #menuItems(): MenuItemConstructorOptions[] {
+  #optionItems(): MenuItemConstructorOptions[] {
     const tray = this.#settings.tray;
     const liveAvailable = this.#liveAvailable();
     return [

@@ -11,6 +11,14 @@ import {
 import type { SettingsStore } from './settings-store.js';
 import { WidgetWindow } from './widget-window.js';
 
+/** What the tray adds to the shared menu. */
+export interface TrayMenuSections {
+  /** Settings about the tray and the window, gathered in an Options submenu. */
+  options: MenuItemConstructorOptions[];
+  /** Things to do, listed at the top level just above Exit. */
+  actions: MenuItemConstructorOptions[];
+}
+
 /**
  * Owns the widget's settings and window, and builds the menus that drive it.
  *
@@ -114,28 +122,69 @@ export class WidgetController {
   }
 
   /**
-   * The widget menu, shared by the tray and the widget's right-click.
+   * The menu for the tray icon or the widget's own right-click.
    *
-   * `includeWidgetToggle` adds the show/hide entry, which the tray needs and the
-   * widget's own menu does not (it has "Hide widget" instead).
+   * The two lead differently. Someone right-clicking the widget is looking at
+   * it, so its settings come first. Someone right-clicking the tray icon wants
+   * the window or the widget, so those come first and the widget's settings
+   * wait in a submenu: listed at the top level, seven settings for a widget
+   * that is not even showing pushed "Show widget" so far down that it went
+   * unnoticed.
    */
   buildMenuTemplate(
     context: 'tray' | 'widget',
     /**
-     * Items only the tray menu carries, placed just above Exit. The tray passes
-     * its own settings here, so this controller does not need to know about them.
+     * What only the tray menu carries, supplied by the tray so this controller
+     * does not need to know about it: `options` become an Options submenu, and
+     * `actions` sit at the top level just above Exit.
      */
-    trayItems: MenuItemConstructorOptions[] = [],
+    tray: TrayMenuSections = { options: [], actions: [] },
   ): MenuItemConstructorOptions[] {
     const settings = this.settings;
+    const open: MenuItemConstructorOptions = {
+      label: 'Open Task Manager',
+      click: () => this.#onShowMainWindow(),
+    };
+    const exit: MenuItemConstructorOptions = {
+      label: 'Exit Task Manager',
+      click: () => this.#onQuit(),
+    };
+
+    if (context === 'widget') {
+      return [
+        open,
+        { type: 'separator' },
+        ...this.#widgetSettingsItems(),
+        { type: 'separator' },
+        { label: 'Hide widget', click: () => this.setEnabled(false) },
+        { type: 'separator' },
+        exit,
+      ];
+    }
+
     const template: MenuItemConstructorOptions[] = [
+      open,
       {
-        label: 'Open Task Manager',
-        click: () => this.#onShowMainWindow(),
+        // Says what clicking it will do, rather than a checkbox whose tick
+        // has to be read as a state.
+        label: settings.enabled ? 'Hide widget' : 'Show widget',
+        click: () => this.setEnabled(!settings.enabled),
       },
       { type: 'separator' },
+      { label: 'Widget', submenu: this.#widgetSettingsItems() },
+    ];
+    if (tray.options.length > 0) template.push({ label: 'Options', submenu: tray.options });
+    if (tray.actions.length > 0) template.push({ type: 'separator' }, ...tray.actions);
+    template.push({ type: 'separator' }, exit);
+    return template;
+  }
+
+  /** The widget's own settings, as menu items. */
+  #widgetSettingsItems(): MenuItemConstructorOptions[] {
+    const settings = this.settings;
+    return [
       {
-        label: 'Widget layout',
+        label: 'Layout',
         submenu: WIDGET_LAYOUTS.map<MenuItemConstructorOptions>((layout: WidgetLayout) => ({
           label: WIDGET_LAYOUT_LABELS[layout],
           type: 'radio',
@@ -192,23 +241,7 @@ export class WidgetController {
         checked: settings.snapToEdges,
         click: () => this.update({ snapToEdges: !settings.snapToEdges }),
       },
-      { type: 'separator' },
     ];
-
-    if (context === 'tray') {
-      template.push({
-        label: 'Show widget',
-        type: 'checkbox',
-        checked: settings.enabled,
-        click: () => this.setEnabled(!settings.enabled),
-      });
-      if (trayItems.length > 0) template.push({ type: 'separator' }, ...trayItems);
-    } else {
-      template.push({ label: 'Hide widget', click: () => this.setEnabled(false) });
-    }
-
-    template.push({ type: 'separator' }, { label: 'Exit Task Manager', click: () => this.#onQuit() });
-    return template;
   }
 
   popupWidgetMenu(x: number, y: number): void {
