@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { AppCommand } from '@shared/ipc';
 import { telemetryStore } from './lib/telemetry-store.js';
 import { useNativeStatus } from './lib/hooks.js';
 import { Sidebar, type PageId } from './components/Sidebar.js';
@@ -13,10 +14,26 @@ import { WidgetSettingsPage } from './pages/WidgetSettings.js';
 import { ExportPage } from './pages/Export.js';
 import { DiskPage, GpuPage, NetworkPage } from './pages/Devices.js';
 import { HistoryPage } from './pages/History.js';
+import { RunTaskDialog } from './components/RunTaskDialog.js';
 
 export function App(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('overview');
+  const [runTask, setRunTask] = useState(false);
   const status = useNativeStatus();
+
+  // Commands from elsewhere, such as the tray's Run new task. One sent before
+  // this page was listening is collected on arrival.
+  useEffect(() => {
+    const handle = (command: AppCommand | null): void => {
+      if (command?.kind === 'runNewTask') setRunTask(true);
+    };
+    const stop = window.taskManager.onAppCommand((command) => {
+      handle(command);
+      void window.taskManager.takePendingAppCommand();
+    });
+    void window.taskManager.takePendingAppCommand().then(handle);
+    return stop;
+  }, []);
 
   useEffect(() => {
     const api = window.taskManager;
@@ -67,7 +84,7 @@ export function App(): React.JSX.Element {
         {page === 'overview' && <OverviewPage />}
         {page === 'cpu' && <CpuPage />}
         {page === 'memory' && <MemoryPage />}
-        {page === 'processes' && <ProcessesPage />}
+        {page === 'processes' && <ProcessesPage onRunNewTask={() => setRunTask(true)} />}
         {page === 'applications' && <ApplicationsPage />}
         {page === 'gpu' && <GpuPage />}
         {page === 'disk' && <DiskPage />}
@@ -77,6 +94,7 @@ export function App(): React.JSX.Element {
         {page === 'export' && <ExportPage />}
         {page === 'debug' && <DebugPage />}
       </main>
+      {runTask && <RunTaskDialog onClose={() => setRunTask(false)} />}
     </div>
   );
 }

@@ -1,9 +1,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { release } from 'node:os';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import type { CollectorConfig } from '@task-manager/telemetry-types';
-import { IpcChannel, type DiagnosticsInfo, type StartupFailure } from '@shared/ipc';
+import {
+  IpcChannel,
+  type AppCommand,
+  type DiagnosticsInfo,
+  type StartupFailure,
+} from '@shared/ipc';
 import {
   isProcessKey,
   readProcessKeys,
@@ -19,6 +24,7 @@ import { ExportService } from './export-service.js';
 import { Logger } from './logger.js';
 import { loadNative } from './native.js';
 import { ProcessActions } from './process-actions.js';
+import { readCommand, runNewTask } from './run-task.js';
 import { Resilience, WINDOWS_RESTART_ARGUMENT } from './resilience.js';
 import { SettingsStore } from './settings-store.js';
 import { TelemetryService } from './telemetry-service.js';
@@ -44,6 +50,8 @@ let logger: Logger | null = null;
 let resilience: Resilience | null = null;
 let guard: CrashGuard | null = null;
 let processActions: ProcessActions | null = null;
+/** A command for the page, kept until the page takes it. */
+let pendingAppCommand: AppCommand | null = null;
 /** Whether Windows accepted the restart registration, for the diagnostics view. */
 let restartRegistered = false;
 /** Startup steps that failed, with why, so the interface can show them. */
@@ -192,6 +200,25 @@ function createMainWindow(): BrowserWindow {
   });
   window.webContents.on('will-navigate', (event) => event.preventDefault());
 
+  // Right-click on text: the editing menu every text field in Windows has.
+  // Anything that shows its own menu (process rows, the column header) has
+  // already cancelled the event, so this only fires where nothing else did.
+  window.webContents.on('context-menu', (_event, params) => {
+    const items: Electron.MenuItemConstructorOptions[] = [];
+    if (params.isEditable) {
+      items.push(
+        { role: 'cut', enabled: params.editFlags.canCut },
+        { role: 'copy', enabled: params.editFlags.canCopy },
+        { role: 'paste', enabled: params.editFlags.canPaste },
+        { type: 'separator' },
+        { role: 'selectAll', enabled: params.editFlags.canSelectAll },
+      );
+    } else if (params.selectionText.trim() !== '') {
+      items.push({ role: 'copy' });
+    }
+    if (items.length > 0) Menu.buildFromTemplate(items).popup({ window });
+  });
+
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
@@ -223,6 +250,20 @@ function quit(): void {
  */
 function followCommandLineColumn(columns: readonly string[]): void {
   telemetry?.setConfig({ collectCommandLines: columns.includes('commandLine') });
+}
+
+/**
+ * Ask the main window's page to do something, opening the window if it is
+ * closed. Kept until the page takes it as well as sent, because a page still
+ * loading cannot hear the message; handling one twice is harmless.
+ */
+function sendAppCommand(command: AppCommand): void {
+  pendingAppCommand = command;
+  showMainWindow();
+  const window = mainWindow;
+  if (window && !window.isDestroyed() && !window.webContents.isLoading()) {
+    window.webContents.send(IpcChannel.AppCommand, command);
+  }
 }
 
 /** Restart as administrator, asking Windows first. See elevation.ts. */
@@ -282,6 +323,40 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     return processActions.showMenu(BrowserWindow.fromWebContents(event.sender), valid);
   });
   ipcMain.handle(IpcChannel.RestartAsAdministrator, () => restartElevated());
+  ipcMain.handle(IpcChannel.RunNewTask, (event, command: unknown, asAdministrator: unknown) => {
+    const valid = readCommand(command);
+    if (!valid) return;
+    return runNewTask(
+      {
+        native: () => loadNative().module,
+        logger,
+        elevated: () => telemetry?.hostInfo?.isElevated === true,
+      },
+      BrowserWindow.fromWebContents(event.sender),
+      valid,
+      asAdministrator === true,
+    );
+  });
+  ipcMain.handle(IpcChannel.BrowseForProgram, async (event) => {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a program',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Programs', extensions: ['exe', 'com', 'bat', 'cmd', 'msc', 'lnk'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    };
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle(IpcChannel.TakePendingAppCommand, () => {
+    const command = pendingAppCommand;
+    pendingAppCommand = null;
+    return command;
+  });
   ipcMain.handle(IpcChannel.GetProcessColumns, () => settings?.processes.columns ?? []);
   ipcMain.handle(IpcChannel.ShowColumnMenu, (event) => {
     if (!settings) return [];
@@ -485,10 +560,12 @@ if (!app.requestSingleInstanceLock()) {
         widget,
         settings: settings as SettingsStore,
         onShowMainWindow: showMainWindow,
-        actions: () =>
-          telemetry?.hostInfo?.isElevated === false
+        actions: () => [
+          { label: 'Run new task…', click: () => sendAppCommand({ kind: 'runNewTask' }) },
+          ...(telemetry?.hostInfo?.isElevated === false
             ? [{ label: 'Restart as administrator', click: restartElevated }]
-            : [],
+            : []),
+        ],
         logger,
       });
       tray.create(iconPath());

@@ -678,6 +678,13 @@ export declare function registerForRestart(commandLine: string): boolean
 export declare function restartShell(startIfMissing: boolean): Promise<JsShellOutcome>
 
 /**
+ * Run a command the way Windows' Run dialog does: a program, a document, a
+ * folder, a URL or a registered name, with parameters, starting in the user's
+ * profile folder. `as_administrator` shows the elevation prompt first.
+ */
+export declare function runCommand(command: string, asAdministrator: boolean): Promise<JsLaunchOutcome>
+
+/**
  * Turn Efficiency mode on or off, as Windows Task Manager defines it: low
  * priority and EcoQoS on, or both undone.
  *

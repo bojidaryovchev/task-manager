@@ -43,7 +43,7 @@ type ViewMode = 'flat' | 'tree';
 
 const EMPTY: ProcessSnapshot[] = [];
 
-export function ProcessesPage(): React.JSX.Element {
+export function ProcessesPage({ onRunNewTask }: { onRunNewTask: () => void }): React.JSX.Element {
   const [sortKey, setSortKey] = useState<SortKey>('cpu');
   const [descending, setDescending] = useState(true);
   const [query, setQuery] = useState('');
@@ -384,8 +384,16 @@ export function ProcessesPage(): React.JSX.Element {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Filter by name, PID, path, user, product or service"
             spellCheck={false}
-            className="w-72 rounded border border-border-subtle bg-surface-2 px-2 py-1 text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-accent-dim"
+            className="w-60 rounded border border-border-subtle bg-surface-2 px-2 py-1 text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-accent-dim"
           />
+          <button
+            type="button"
+            onClick={onRunNewTask}
+            title="Open a program, folder, document or website, as Windows' Run dialog does."
+            className="rounded border border-border-subtle bg-surface-2 px-2.5 py-1 text-[11px] text-text-primary hover:border-border-strong"
+          >
+            Run new task
+          </button>
           <button
             type="button"
             onClick={endChosen}

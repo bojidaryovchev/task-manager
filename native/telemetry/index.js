@@ -713,6 +713,7 @@ module.exports.nativeProbe = nativeBinding.nativeProbe
 module.exports.processImagePath = nativeBinding.processImagePath
 module.exports.registerForRestart = nativeBinding.registerForRestart
 module.exports.restartShell = nativeBinding.restartShell
+module.exports.runCommand = nativeBinding.runCommand
 module.exports.setEfficiencyMode = nativeBinding.setEfficiencyMode
 module.exports.setProcessAffinity = nativeBinding.setProcessAffinity
 module.exports.setProcessPriority = nativeBinding.setProcessPriority

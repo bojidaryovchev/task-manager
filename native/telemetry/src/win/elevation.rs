@@ -41,9 +41,24 @@ fn wide(text: &str) -> Vec<u16> {
 /// elevation prompt. Blocks until the user has answered it, so it belongs on
 /// a worker thread, never the JavaScript one.
 pub fn launch_elevated(file: &str, parameters: &str) -> Launch {
-    let verb = wide("runas");
+    execute(Some("runas"), file, parameters, None)
+}
+
+/// Open `file` the way the shell would - a program, a document, a folder, a
+/// URL, or a name registered under App Paths - with `verb` (`None` for the
+/// default, `runas` for administrator) and `parameters`, starting in
+/// `directory`. Can block on the elevation prompt, so never on the JavaScript
+/// thread.
+pub fn execute(
+    verb: Option<&str>,
+    file: &str,
+    parameters: &str,
+    directory: Option<&str>,
+) -> Launch {
+    let verb = verb.map(wide);
     let file = wide(file);
     let parameters = wide(parameters);
+    let directory = directory.map(wide);
 
     // ShellExecuteEx can reach shell extensions through COM, so the calling
     // thread needs COM initialised, as the documentation for the function asks.
@@ -62,9 +77,12 @@ pub fn launch_elevated(file: &str, parameters: &str) -> Launch {
     // No error dialogs of the shell's own: the application reports failures
     // itself, with a code. And wait for the launch to finish before returning.
     info.fMask = SEE_MASK_FLAG_NO_UI | SEE_MASK_NOASYNC;
-    info.lpVerb = verb.as_ptr();
+    info.lpVerb = verb.as_ref().map_or(std::ptr::null(), |verb| verb.as_ptr());
     info.lpFile = file.as_ptr();
     info.lpParameters = parameters.as_ptr();
+    info.lpDirectory = directory
+        .as_ref()
+        .map_or(std::ptr::null(), |directory| directory.as_ptr());
     info.nShow = SW_SHOWNORMAL;
 
     // SAFETY: `info` is fully initialised for the call.

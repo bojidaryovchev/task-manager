@@ -166,6 +166,14 @@ export const ERROR_CODES = {
     action:
       'Signing out and back in brings Explorer back. So does running explorer.exe from a program that is not running as administrator.',
   },
+  'TM-0014': {
+    subsystem: 'actions',
+    title: 'Windows could not start the new task',
+    meaning:
+      'Windows could not find or open what was typed: no program by that name on the path or registered with Windows, no file at that location, or nothing set to open that kind of file. Nothing was started.',
+    action:
+      'Check the spelling, give the full path, or use Browse to pick the program.',
+  },
 
   // --- 1xxx startup ---------------------------------------------------------
   'TM-1001': {

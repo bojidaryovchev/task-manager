@@ -474,6 +474,117 @@ pub fn launch_elevated(file: String, parameters: String) -> AsyncTask<LaunchElev
     AsyncTask::new(LaunchElevated { file, parameters })
 }
 
+/// Split a command into the thing to open and its parameters, the way the Run
+/// dialog reads one: a quoted program; otherwise the longest leading run of
+/// words that names something that exists, so an unquoted path with spaces
+/// still works; otherwise the first word.
+pub fn split_command(command: &str, exists: impl Fn(&str) -> bool) -> (String, String) {
+    let command = command.trim();
+    if let Some(rest) = command.strip_prefix('"') {
+        return match rest.split_once('"') {
+            Some((file, parameters)) => (file.to_string(), parameters.trim().to_string()),
+            None => (rest.to_string(), String::new()),
+        };
+    }
+    let breaks: Vec<usize> = command
+        .char_indices()
+        .filter(|(_, c)| c.is_whitespace())
+        .map(|(index, _)| index)
+        .collect();
+    for &at in breaks.iter().rev() {
+        let (file, parameters) = command.split_at(at);
+        if exists(&expand_environment(file)) {
+            return (file.to_string(), parameters.trim().to_string());
+        }
+    }
+    match breaks.first() {
+        Some(&at) => {
+            let (file, parameters) = command.split_at(at);
+            (file.to_string(), parameters.trim().to_string())
+        }
+        None => (command.to_string(), String::new()),
+    }
+}
+
+/// Replace `%NAME%` with the environment variable's value, as the Run dialog
+/// does. A name that is not set is left as it was.
+pub fn expand_environment(text: &str) -> String {
+    let mut expanded = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find('%') {
+        expanded.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) if end > 0 => match std::env::var(&after[..end]) {
+                Ok(value) => {
+                    expanded.push_str(&value);
+                    rest = &after[end + 1..];
+                }
+                Err(_) => {
+                    expanded.push('%');
+                    rest = after;
+                }
+            },
+            _ => {
+                expanded.push('%');
+                rest = after;
+            }
+        }
+    }
+    expanded.push_str(rest);
+    expanded
+}
+
+pub struct RunCommand {
+    command: String,
+    as_administrator: bool,
+}
+
+impl Task for RunCommand {
+    type Output = crate::win::elevation::Launch;
+    type JsValue = JsLaunchOutcome;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        use crate::win::elevation::{execute, Launch};
+        let (file, parameters) =
+            split_command(&self.command, |path| std::path::Path::new(path).exists());
+        if file.is_empty() {
+            return Ok(Launch::Failed(2));
+        }
+        let home = std::env::var("USERPROFILE").ok();
+        Ok(execute(
+            self.as_administrator.then_some("runas"),
+            &expand_environment(&file),
+            &parameters,
+            home.as_deref(),
+        ))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        use crate::win::elevation::Launch;
+        let (outcome, win32_error) = match output {
+            Launch::Started => ("started", None),
+            Launch::Declined => ("declined", None),
+            Launch::Failed(error) => ("failed", Some(error)),
+        };
+        Ok(JsLaunchOutcome {
+            outcome: outcome.to_string(),
+            win32_error,
+        })
+    }
+}
+
+/// Run a command the way Windows' Run dialog does: a program, a document, a
+/// folder, a URL or a registered name, with parameters, starting in the user's
+/// profile folder. `as_administrator` shows the elevation prompt first.
+#[napi(ts_return_type = "Promise<JsLaunchOutcome>")]
+pub fn run_command(command: String, as_administrator: bool) -> AsyncTask<RunCommand> {
+    AsyncTask::new(RunCommand {
+        command,
+        as_administrator,
+    })
+}
+
 /// Turn on SeDebugPrivilege, which a process running as administrator holds but
 /// has switched off. True when it is on afterwards.
 #[napi]
@@ -686,6 +797,56 @@ mod tests {
         assert_eq!(state.is_critical, Some(false));
         assert!(state.can_end);
         assert_eq!(state.priority_class.as_deref(), Some("normal"));
+    }
+
+    #[test]
+    fn splits_a_command_the_way_the_run_dialog_does() {
+        let nothing_exists = |_: &str| false;
+        assert_eq!(
+            split_command(r#""C:\Program Files\App\app.exe" --flag x"#, nothing_exists),
+            (
+                r"C:\Program Files\App\app.exe".to_string(),
+                "--flag x".to_string()
+            )
+        );
+        assert_eq!(
+            split_command("notepad  readme.txt", nothing_exists),
+            ("notepad".to_string(), "readme.txt".to_string())
+        );
+        assert_eq!(
+            split_command("  calc  ", nothing_exists),
+            ("calc".to_string(), String::new())
+        );
+        assert_eq!(
+            split_command("", nothing_exists),
+            (String::new(), String::new())
+        );
+    }
+
+    #[test]
+    fn keeps_an_unquoted_path_with_spaces_together_when_it_exists() {
+        let exists = |path: &str| path == r"C:\Program Files\App\app.exe";
+        assert_eq!(
+            split_command(r"C:\Program Files\App\app.exe --flag", exists),
+            (
+                r"C:\Program Files\App\app.exe".to_string(),
+                "--flag".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn expands_environment_variables_and_leaves_unknown_ones() {
+        let windows = std::env::var("WINDIR").expect("WINDIR is always set");
+        assert_eq!(
+            expand_environment(r"%WINDIR%\notepad.exe"),
+            format!(r"{windows}\notepad.exe")
+        );
+        assert_eq!(
+            expand_environment("%NO_SUCH_VARIABLE_HERE%"),
+            "%NO_SUCH_VARIABLE_HERE%"
+        );
+        assert_eq!(expand_environment("100% sure"), "100% sure");
     }
 
     #[test]

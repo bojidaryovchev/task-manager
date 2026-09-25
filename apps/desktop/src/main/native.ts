@@ -76,6 +76,11 @@ export interface NativeTelemetryModule {
    * Resolves once the user has answered it.
    */
   launchElevated(file: string, parameters: string): Promise<LaunchOutcome>;
+  /**
+   * Run a command the way Windows' Run dialog does, optionally through the
+   * elevation prompt. Resolves once it has started, or the prompt is answered.
+   */
+  runCommand(command: string, asAdministrator: boolean): Promise<LaunchOutcome>;
   /** Switch on SeDebugPrivilege. True when it is on afterwards. */
   enableDebugPrivilege(): boolean;
   /** The executable a process is running, when it can be read. */

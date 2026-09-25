@@ -209,7 +209,9 @@ cumulative and per-second I/O, and the Windows services each process hosts, so
 every `svchost.exe` says what it is. Flat and tree views, with subtree totals for
 the metrics that are actually additive. Right-click the column header to choose
 columns: user, priority, start time, description, publisher, path, command line
-and more, all already measured. Right-click for End task, End process tree,
+and more, all already measured. Run new task opens a program, folder, document
+or website the way Windows' Run dialog does, optionally as administrator, from
+the Processes page or the tray. Right-click any text for Cut, Copy and Paste. Right-click for End task, End process tree,
 Close window, Switch to, Set priority, Efficiency mode, Set affinity, Restart
 (for Windows Explorer), Open file location, Properties, Search online and Copy;
 select several with Ctrl or Shift, end them with Delete, and hold Ctrl to freeze

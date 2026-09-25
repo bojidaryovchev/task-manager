@@ -67,6 +67,14 @@ export const IpcChannel = {
   GetProcessColumns: 'process:getColumns',
   /** invoke: () => ProcessColumnId[] - show the column menu; resolves with the choice */
   ShowColumnMenu: 'process:showColumnMenu',
+  /** invoke: (command, asAdministrator) => void - Run new task */
+  RunNewTask: 'process:runNewTask',
+  /** invoke: () => string | null - pick a program for Run new task */
+  BrowseForProgram: 'process:browseForProgram',
+  /** main -> renderer push: AppCommand - something the page should do */
+  AppCommand: 'app:command',
+  /** invoke: () => AppCommand | null - one sent before the page could hear it */
+  TakePendingAppCommand: 'app:takePendingCommand',
 
   /** invoke: () => DiagnosticsInfo */
   GetDiagnostics: 'diagnostics:get',
@@ -77,6 +85,12 @@ export const IpcChannel = {
 } as const;
 
 export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
+
+/**
+ * Something the main window's page should do, asked for from elsewhere: the
+ * tray menu, for one.
+ */
+export type AppCommand = { kind: 'runNewTask' };
 
 /** Where history is stored and whether it is running. */
 export interface HistoryStatus {
@@ -257,6 +271,18 @@ export interface TaskManagerApi {
    * columns chosen, which have already been saved.
    */
   showColumnMenu(): Promise<ProcessColumnId[]>;
+  /**
+   * Run new task: open a program, document, folder or URL the way Windows'
+   * Run dialog does, optionally as administrator. Failures are reported by the
+   * main process.
+   */
+  runNewTask(command: string, asAdministrator: boolean): Promise<void>;
+  /** Choose a program with the Windows open dialog. Null when dismissed. */
+  browseForProgram(): Promise<string | null>;
+  /** Subscribe to commands from elsewhere, such as the tray. */
+  onAppCommand(listener: (command: AppCommand) => void): () => void;
+  /** A command sent while the page was still loading, if one was. */
+  takePendingAppCommand(): Promise<AppCommand | null>;
 
   // --- diagnostics ---------------------------------------------------------
   /** Where the logs live and what has crashed recently. */
