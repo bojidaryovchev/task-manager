@@ -2,6 +2,11 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
 import {
+  DEFAULT_PROCESS_COLUMNS,
+  normaliseProcessColumns,
+  type ProcessColumnId,
+} from '@shared/process-columns.js';
+import {
   DEFAULT_WIDGET_SETTINGS,
   normaliseWidgetSettings,
   type WidgetSettings,
@@ -51,6 +56,8 @@ export interface ProcessSettings {
    * far more than was meant.
    */
   confirmEnd: boolean;
+  /** The optional columns the Processes page shows, in layout order. */
+  columns: ProcessColumnId[];
 }
 
 export interface AppSettings {
@@ -68,7 +75,7 @@ const DEFAULTS: AppSettings = {
   // Both on by default: this is how Windows Task Manager behaves, and it is
   // what the application is modelled on.
   tray: { liveIcon: true, hideWhenMinimized: true, closeToTray: true },
-  processes: { confirmEnd: true },
+  processes: { confirmEnd: true, columns: [...DEFAULT_PROCESS_COLUMNS] },
 };
 
 const WRITE_DEBOUNCE_MS = 400;
@@ -129,7 +136,10 @@ export class SettingsStore {
 
   updateProcesses(patch: Partial<ProcessSettings>): ProcessSettings {
     const next = { ...this.#settings.processes, ...patch };
-    this.#settings.processes = { confirmEnd: next.confirmEnd === true };
+    this.#settings.processes = {
+      confirmEnd: next.confirmEnd === true,
+      columns: normaliseProcessColumns(next.columns),
+    };
     this.#scheduleWrite();
     return this.#settings.processes;
   }
@@ -173,13 +183,15 @@ export class SettingsStore {
 
   #read(): AppSettings {
     try {
-      const raw = readFileSync(this.#path, 'utf8');
+      // Notepad and PowerShell can save UTF-8 with a byte-order mark, which
+      // JSON.parse rejects outright. A hand-edited file should still load.
+      const raw = readFileSync(this.#path, 'utf8').replace(/^\uFEFF/, '');
       const parsed: unknown = JSON.parse(raw);
       const source = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as {
         widget?: unknown;
         history?: { enabled?: unknown };
         tray?: { liveIcon?: unknown; hideWhenMinimized?: unknown; closeToTray?: unknown };
-        processes?: { confirmEnd?: unknown };
+        processes?: { confirmEnd?: unknown; columns?: unknown };
       };
       return {
         widget: normaliseWidgetSettings(source.widget),
@@ -191,7 +203,10 @@ export class SettingsStore {
           hideWhenMinimized: source.tray?.hideWhenMinimized !== false,
           closeToTray: source.tray?.closeToTray !== false,
         },
-        processes: { confirmEnd: source.processes?.confirmEnd !== false },
+        processes: {
+          confirmEnd: source.processes?.confirmEnd !== false,
+          columns: normaliseProcessColumns(source.processes?.columns),
+        },
       };
     } catch (error) {
       // Missing on first run, and unreadable or corrupt if something went wrong.
@@ -207,7 +222,7 @@ export class SettingsStore {
         widget: { ...DEFAULTS.widget },
         history: { ...DEFAULTS.history },
         tray: { ...DEFAULTS.tray },
-        processes: { ...DEFAULTS.processes },
+        processes: { ...DEFAULTS.processes, columns: [...DEFAULTS.processes.columns] },
       };
     }
   }

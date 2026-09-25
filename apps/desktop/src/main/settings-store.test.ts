@@ -71,22 +71,38 @@ describe('tray settings', () => {
 
 describe('process settings', () => {
   it('ask before ending a process unless told not to', () => {
-    expect(new SettingsStore(path).processes).toEqual({ confirmEnd: true });
+    expect(new SettingsStore(path).processes.confirmEnd).toBe(true);
     writeFileSync(path, JSON.stringify({ processes: { confirmEnd: 'no' } }), 'utf8');
-    expect(new SettingsStore(path).processes).toEqual({ confirmEnd: true });
+    expect(new SettingsStore(path).processes.confirmEnd).toBe(true);
   });
 
   it("remember \"don't ask again\"", () => {
     const first = new SettingsStore(path);
     first.updateProcesses({ confirmEnd: false });
     first.flush();
-    expect(new SettingsStore(path).processes).toEqual({ confirmEnd: false });
+    expect(new SettingsStore(path).processes.confirmEnd).toBe(false);
+  });
+
+  it('remember the chosen columns, and drop ones they do not know', () => {
+    const first = new SettingsStore(path);
+    first.updateProcesses({ columns: ['user', 'pid'] });
+    first.flush();
+    expect(new SettingsStore(path).processes.columns).toEqual(['pid', 'user']);
+    writeFileSync(path, JSON.stringify({ processes: { columns: ['pid', 'nonsense'] } }), 'utf8');
+    expect(new SettingsStore(path).processes.columns).toEqual(['pid']);
   });
 });
 
 describe('reading the file', () => {
   it('treats a missing file as a first run, not a problem', () => {
     expect(new SettingsStore(path).takeProblems()).toEqual([]);
+  });
+
+  it('reads a file saved with a byte-order mark, as Notepad and PowerShell can', () => {
+    writeFileSync(path, `\uFEFF${JSON.stringify({ tray: { closeToTray: false } })}`, 'utf8');
+    const store = new SettingsStore(path);
+    expect(store.tray.closeToTray).toBe(false);
+    expect(store.takeProblems()).toEqual([]);
   });
 
   it('falls back to defaults on a damaged file and reports it', () => {

@@ -6,6 +6,7 @@ import type {
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
 import type { ProcessMenuCommand, ProcessMenuRequest } from './process-actions.js';
+import type { ProcessColumnId } from './process-columns.js';
 import type { WidgetSettings } from './widget.js';
 
 /**
@@ -62,6 +63,10 @@ export const IpcChannel = {
   RestartAsAdministrator: 'app:restartAsAdministrator',
   /** invoke: (key, processors: number[]) => void - from the affinity dialog */
   SetProcessAffinity: 'process:setAffinity',
+  /** invoke: () => ProcessColumnId[] - the columns the Processes page shows */
+  GetProcessColumns: 'process:getColumns',
+  /** invoke: () => ProcessColumnId[] - show the column menu; resolves with the choice */
+  ShowColumnMenu: 'process:showColumnMenu',
 
   /** invoke: () => DiagnosticsInfo */
   GetDiagnostics: 'diagnostics:get',
@@ -245,6 +250,13 @@ export interface TaskManagerApi {
    * anything Windows refuses.
    */
   setProcessAffinity(key: string, processors: number[]): Promise<void>;
+  /** The optional columns the Processes page shows, in layout order. */
+  getProcessColumns(): Promise<ProcessColumnId[]>;
+  /**
+   * Show the column menu at the pointer. Resolves once it closes, with the
+   * columns chosen, which have already been saved.
+   */
+  showColumnMenu(): Promise<ProcessColumnId[]>;
 
   // --- diagnostics ---------------------------------------------------------
   /** Where the logs live and what has crashed recently. */

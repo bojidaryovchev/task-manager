@@ -1,4 +1,5 @@
 import {
+  forwardRef,
   memo,
   useCallback,
   useDeferredValue,
@@ -8,17 +9,20 @@ import {
   useState,
 } from 'react';
 import type { ProcessSnapshot } from '@task-manager/telemetry-types';
-import {
-  buildProcessTree,
-  flattenTree,
-  formatBytes,
-  formatBytesPerSecond,
-  formatCount,
-  formatPercent,
-  type ProcessAggregate,
-  type ProcessTreeNode,
-} from '@task-manager/shared';
+import { buildProcessTree, flattenTree, formatCount } from '@task-manager/shared';
+import { DEFAULT_PROCESS_COLUMNS, type ProcessColumnId } from '@shared/process-columns';
 import { PageShell } from '../components/primitives.js';
+import {
+  Cell,
+  COLUMN_SPECS,
+  NAME_DEFINITION,
+  nodeComparator,
+  processComparator,
+  sortsDescending,
+  type CpuMode,
+  type Row,
+  type SortKey,
+} from './process-columns.js';
 import { useCtrlHeld, useFrozen, useHostInfo, useTelemetry } from '../lib/hooks.js';
 import { ProcessDetails } from '../components/ProcessDetails.js';
 import { AffinityDialog, type AffinityRequest } from '../components/AffinityDialog.js';
@@ -31,109 +35,11 @@ import {
   type Selection,
 } from '../lib/selection.js';
 
-type SortKey =
-  | 'name'
-  | 'pid'
-  | 'cpu'
-  | 'memory'
-  | 'commit'
-  | 'threads'
-  | 'handles'
-  | 'gpu'
-  | 'gpuMemory'
-  | 'ioRead'
-  | 'ioWrite';
-
-interface Column {
-  key: SortKey;
-  label: string;
-  /** 0 means "take the remaining width". */
-  width: number;
-  definition: string;
-}
-
-const COLUMNS: Column[] = [
-  { key: 'name', label: 'Name', width: 0, definition: 'Image name reported by Windows.' },
-  {
-    key: 'pid',
-    label: 'PID',
-    width: 70,
-    definition:
-      'Process identifier. Windows reuses these, so identity is PID plus creation time.',
-  },
-  {
-    key: 'cpu',
-    label: 'CPU',
-    width: 76,
-    definition:
-      'Share of total machine capacity. One fully saturated logical processor is 100/N percent, so these sum to roughly the aggregate CPU figure.',
-  },
-  {
-    key: 'memory',
-    label: 'Memory',
-    width: 96,
-    definition:
-      'Private working set: physical memory private to this process. The same basis as the Task Manager Memory column, and safe to sum because no page is counted twice.',
-  },
-  {
-    key: 'commit',
-    label: 'Commit',
-    width: 96,
-    definition: 'Private committed bytes — backing store reserved, whether resident or not.',
-  },
-  { key: 'threads', label: 'Threads', width: 72, definition: 'Threads currently in the process.' },
-  {
-    key: 'handles',
-    label: 'Handles',
-    width: 80,
-    definition: 'Open kernel handles. A steadily climbing count is a handle leak.',
-  },
-  {
-    key: 'gpu',
-    label: 'GPU',
-    width: 70,
-    definition:
-      'Maximum GPU engine utilisation for this process, from the GPU Engine counter set. Engines run concurrently, so this is a maximum rather than a sum.',
-  },
-  {
-    key: 'gpuMemory',
-    label: 'GPU mem',
-    width: 90,
-    definition: 'Dedicated GPU memory attributed to this process.',
-  },
-  {
-    key: 'ioRead',
-    label: 'I/O read',
-    width: 90,
-    definition:
-      'Bytes per second from the process I/O counters. Covers file, network and device I/O — not disk alone.',
-  },
-  { key: 'ioWrite', label: 'I/O write', width: 90, definition: 'As I/O read, for writes.' },
-];
-
 const ROW_HEIGHT = 24;
 const OVERSCAN = 12;
 const INDENT_PER_LEVEL = 14;
 
-/** CPU column mode: two genuinely different normalisations, never mixed. */
-type CpuMode = 'machine' | 'core';
 type ViewMode = 'flat' | 'tree';
-
-/**
- * One rendered row.
- *
- * In tree mode a row with children shows its *subtree* totals, so a collapsed
- * `chrome.exe` accounts for all of its children. Leaf rows always show their own
- * values, and only additive metrics are ever summed.
- */
-interface Row {
-  process: ProcessSnapshot;
-  depth: number;
-  childCount: number;
-  descendantCount: number;
-  /** Subtree totals, present only when this row has children. */
-  totals: ProcessAggregate | null;
-}
 
 const EMPTY: ProcessSnapshot[] = [];
 
@@ -229,9 +135,36 @@ export function ProcessesPage(): React.JSX.Element {
         return currentKey;
       }
       // Text sorts ascending, magnitudes descending — what you almost always want.
-      setDescending(key !== 'name');
+      // Text sorts A to Z first, magnitudes largest first.
+      setDescending(sortsDescending(key));
       return key;
     });
+  }, []);
+
+  // The optional columns, as chosen from the header's right-click menu.
+  const [columns, setColumns] = useState<ProcessColumnId[]>(() => [...DEFAULT_PROCESS_COLUMNS]);
+  useEffect(() => {
+    void window.taskManager.getProcessColumns().then(setColumns);
+  }, []);
+  const onColumnMenu = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    void window.taskManager.showColumnMenu().then(setColumns);
+  }, []);
+  // Sorting by a column that has just been hidden would order the list by
+  // something no longer on screen.
+  useEffect(() => {
+    if (sortKey !== 'name' && !columns.includes(sortKey)) {
+      setSortKey(columns.includes('cpu') ? 'cpu' : 'name');
+      setDescending(columns.includes('cpu'));
+    }
+  }, [columns, sortKey]);
+
+  // The header scrolls sideways with the rows, which own the scrollbar.
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const onScrollLeft = useCallback((left: number) => {
+    if (headerRef.current && headerRef.current.scrollLeft !== left) {
+      headerRef.current.scrollLeft = left;
+    }
   }, []);
 
   const onToggle = useCallback((key: string) => {
@@ -466,15 +399,20 @@ export function ProcessesPage(): React.JSX.Element {
       }
     >
       <div className="flex h-full min-h-0 gap-4">
-        <div className="flex min-w-0 flex-1 flex-col rounded-lg border border-border-subtle bg-surface-1">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
           <TableHeader
+            ref={headerRef}
+            columns={columns}
             sortKey={sortKey}
             descending={descending}
             onSort={onSort}
+            onColumnMenu={onColumnMenu}
             cpuMode={cpuMode}
           />
           <VirtualRows
             rows={rows}
+            columns={columns}
+            onScrollLeft={onScrollLeft}
             cpuMode={cpuMode}
             viewMode={viewMode}
             collapsed={collapsed}
@@ -532,37 +470,69 @@ function Toggle<T extends string>({
   );
 }
 
-function TableHeader({
-  sortKey,
-  descending,
-  onSort,
-  cpuMode,
-}: {
-  sortKey: SortKey;
-  descending: boolean;
-  onSort: (key: SortKey) => void;
-  cpuMode: CpuMode;
-}): React.JSX.Element {
+/** The Name column never gets narrower than this; the table scrolls instead. */
+const NAME_MIN_WIDTH = 220;
+
+/** The width the whole table needs for the columns showing. */
+function tableWidth(columns: readonly ProcessColumnId[]): number {
+  return columns.reduce((total, id) => total + COLUMN_SPECS[id].width, NAME_MIN_WIDTH);
+}
+
+const TableHeader = forwardRef<
+  HTMLDivElement,
+  {
+    columns: readonly ProcessColumnId[];
+    sortKey: SortKey;
+    descending: boolean;
+    onSort: (key: SortKey) => void;
+    onColumnMenu: (event: React.MouseEvent) => void;
+    cpuMode: CpuMode;
+  }
+>(function TableHeader({ columns, sortKey, descending, onSort, onColumnMenu, cpuMode }, ref) {
+  const arrow = (key: SortKey): React.ReactNode =>
+    sortKey === key && <span>{descending ? '▾' : '▴'}</span>;
   return (
-    <div className="flex shrink-0 border-b border-border-subtle bg-surface-2 text-[11px] font-medium text-text-secondary">
-      {COLUMNS.map((column) => (
+    // Scrolled sideways in step with the rows, which own the scrollbar.
+    <div ref={ref} className="shrink-0 overflow-hidden border-b border-border-subtle bg-surface-2">
+      <div
+        onContextMenu={onColumnMenu}
+        title="Right-click to choose columns"
+        style={{ minWidth: tableWidth(columns) }}
+        className="flex text-[11px] font-medium text-text-secondary"
+      >
         <button
-          key={column.key}
           type="button"
-          title={column.definition}
-          onClick={() => onSort(column.key)}
-          style={column.width === 0 ? undefined : { width: column.width }}
-          className={`flex items-center gap-1 px-2 py-1.5 hover:text-text-primary ${
-            column.width === 0 ? 'min-w-0 flex-1' : 'justify-end'
-          } ${sortKey === column.key ? 'text-text-primary' : ''}`}
+          title={NAME_DEFINITION}
+          onClick={() => onSort('name')}
+          className={`flex min-w-0 flex-1 items-center gap-1 px-2 py-1.5 hover:text-text-primary ${
+            sortKey === 'name' ? 'text-text-primary' : ''
+          }`}
         >
-          {column.key === 'cpu' ? (cpuMode === 'machine' ? 'CPU' : 'CPU (core)') : column.label}
-          {sortKey === column.key && <span>{descending ? '▾' : '▴'}</span>}
+          Name
+          {arrow('name')}
         </button>
-      ))}
+        {columns.map((id) => {
+          const spec = COLUMN_SPECS[id];
+          return (
+            <button
+              key={id}
+              type="button"
+              title={spec.definition}
+              onClick={() => onSort(id)}
+              style={{ width: spec.width }}
+              className={`flex shrink-0 items-center gap-1 px-2 py-1.5 hover:text-text-primary ${
+                spec.align === 'right' ? 'justify-end' : ''
+              } ${sortKey === id ? 'text-text-primary' : ''}`}
+            >
+              {spec.label(cpuMode)}
+              {arrow(id)}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
-}
+});
 
 /**
  * Windowed row rendering.
@@ -573,6 +543,7 @@ function TableHeader({
  */
 function VirtualRows({
   rows,
+  columns,
   cpuMode,
   viewMode,
   collapsed,
@@ -582,9 +553,11 @@ function VirtualRows({
   onRowContextMenu,
   onKeyDown,
   onToggle,
+  onScrollLeft,
   emptyMessage,
 }: {
   rows: Row[];
+  columns: readonly ProcessColumnId[];
   cpuMode: CpuMode;
   viewMode: ViewMode;
   collapsed: ReadonlySet<string>;
@@ -594,6 +567,8 @@ function VirtualRows({
   onRowContextMenu: (key: string, event: React.MouseEvent) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   onToggle: (key: string) => void;
+  /** Sideways scrolling, so the header can follow. */
+  onScrollLeft: (left: number) => void;
   emptyMessage: string;
 }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -634,15 +609,25 @@ function VirtualRows({
       aria-label="Processes"
       tabIndex={0}
       onKeyDown={onKeyDown}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-      className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-dim"
+      onScroll={(event) => {
+        setScrollTop(event.currentTarget.scrollTop);
+        onScrollLeft(event.currentTarget.scrollLeft);
+      }}
+      className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-dim"
     >
-      <div style={{ height: rows.length * ROW_HEIGHT, position: 'relative' }}>
+      <div
+        style={{
+          height: rows.length * ROW_HEIGHT,
+          minWidth: tableWidth(columns),
+          position: 'relative',
+        }}
+      >
         <div style={{ transform: `translateY(${first * ROW_HEIGHT}px)` }}>
           {visible.map((row) => (
             <ProcessRow
               key={row.process.key}
               row={row}
+              columns={columns}
               cpuMode={cpuMode}
               treeMode={viewMode === 'tree'}
               collapsed={collapsed.has(row.process.key)}
@@ -663,6 +648,7 @@ function VirtualRows({
 
 const ProcessRow = memo(function ProcessRow({
   row,
+  columns,
   cpuMode,
   treeMode,
   collapsed,
@@ -672,6 +658,7 @@ const ProcessRow = memo(function ProcessRow({
   onToggle,
 }: {
   row: Row;
+  columns: readonly ProcessColumnId[];
   cpuMode: CpuMode;
   treeMode: boolean;
   collapsed: boolean;
@@ -685,27 +672,6 @@ const ProcessRow = memo(function ProcessRow({
   // column sum to ~100%, but it measures idleness rather than work, so it is
   // shown muted and labelled rather than silently dropped.
   const isIdle = process.pid === 0;
-
-  const machineCpu = totals
-    ? totals.hasCpuMeasurement
-      ? totals.cpuMachinePercent
-      : undefined
-    : process.cpuMachinePercent;
-  const cpu =
-    machineCpu === undefined
-      ? undefined
-      : cpuMode === 'machine'
-        ? machineCpu
-        : totals
-          ? machineCpu * coreEquivalentRatio(process)
-          : process.cpuCoreEquivalentPercent;
-
-  const memory = totals ? totals.privateWorkingSetBytes : process.privateWorkingSetBytes;
-  const commit = totals ? totals.privateCommitBytes : process.privateCommitBytes;
-  const threads = totals ? totals.threadCount : process.threadCount;
-  const handles = totals ? totals.handleCount : process.handleCount;
-  const ioRead = totals ? totals.ioReadBytesPerSecond : process.ioReadBytesPerSecond;
-  const ioWrite = totals ? totals.ioWriteBytesPerSecond : process.ioWriteBytesPerSecond;
 
   return (
     <div
@@ -785,185 +751,9 @@ const ProcessRow = memo(function ProcessRow({
           </span>
         )}
       </div>
-      <Cell width={70}>{process.pid}</Cell>
-      <Cell width={76} emphasis={!isIdle && (cpu ?? 0) > 1}>
-        {cpu === undefined ? '—' : formatPercent(cpu, cpuMode === 'machine' ? 1 : 0)}
-      </Cell>
-      <Cell width={96}>{formatBytes(memory)}</Cell>
-      <Cell width={96}>{formatBytes(commit)}</Cell>
-      <Cell width={72}>{threads}</Cell>
-      <Cell width={80}>{formatCount(handles)}</Cell>
-      <Cell width={70}>
-        {process.gpuPercent === undefined || process.gpuPercent === 0
-          ? ''
-          : formatPercent(process.gpuPercent, 1)}
-      </Cell>
-      <Cell width={90}>
-        {process.gpuDedicatedMemoryBytes === undefined || process.gpuDedicatedMemoryBytes === 0
-          ? ''
-          : formatBytes(process.gpuDedicatedMemoryBytes)}
-      </Cell>
-      <Cell width={90}>{rate(ioRead)}</Cell>
-      <Cell width={90}>{rate(ioWrite)}</Cell>
+      {columns.map((id) => (
+        <Cell key={id} id={id} row={row} cpuMode={cpuMode} />
+      ))}
     </div>
   );
 });
-
-/**
- * The machine-to-core-equivalent ratio, recovered from the process's own pair of
- * values rather than re-deriving it from the processor count.
- *
- * Falls back to 1 when the process has no CPU measurement, so a subtree total
- * can never divide by zero.
- */
-function coreEquivalentRatio(process: ProcessSnapshot): number {
-  if (
-    process.cpuMachinePercent === undefined ||
-    process.cpuCoreEquivalentPercent === undefined ||
-    process.cpuMachinePercent === 0
-  ) {
-    return 1;
-  }
-  return process.cpuCoreEquivalentPercent / process.cpuMachinePercent;
-}
-
-function rate(value: number | undefined): string {
-  if (value === undefined) return '—';
-  if (value < 1024) return '';
-  return formatBytesPerSecond(value);
-}
-
-function Cell({
-  width,
-  children,
-  emphasis,
-}: {
-  width: number;
-  children: React.ReactNode;
-  emphasis?: boolean;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{ width }}
-      className={`tnum shrink-0 px-2 text-right ${
-        emphasis ? 'text-text-primary' : 'text-text-secondary'
-      }`}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** Value a sort reads from a flat process row. */
-function processValue(
-  process: ProcessSnapshot,
-  key: SortKey,
-  cpuMode: CpuMode,
-): number | string | undefined {
-  switch (key) {
-    case 'name':
-      return process.name;
-    case 'pid':
-      return process.pid;
-    case 'cpu':
-      return cpuMode === 'machine' ? process.cpuMachinePercent : process.cpuCoreEquivalentPercent;
-    case 'memory':
-      return process.privateWorkingSetBytes;
-    case 'commit':
-      return process.privateCommitBytes;
-    case 'threads':
-      return process.threadCount;
-    case 'handles':
-      return process.handleCount;
-    case 'gpu':
-      return process.gpuPercent;
-    case 'gpuMemory':
-      return process.gpuDedicatedMemoryBytes;
-    case 'ioRead':
-      return process.ioReadBytesPerSecond;
-    case 'ioWrite':
-      return process.ioWriteBytesPerSecond;
-  }
-}
-
-/** Value a sort reads from a tree node: the subtree total. */
-function nodeValue(
-  node: ProcessTreeNode,
-  key: SortKey,
-  cpuMode: CpuMode,
-): number | string | undefined {
-  const { subtotal, process } = node;
-  switch (key) {
-    case 'name':
-      return process.name;
-    case 'pid':
-      return process.pid;
-    case 'cpu': {
-      if (!subtotal.hasCpuMeasurement) return undefined;
-      const machine = subtotal.cpuMachinePercent;
-      return cpuMode === 'machine' ? machine : machine * coreEquivalentRatio(process);
-    }
-    case 'memory':
-      return subtotal.privateWorkingSetBytes;
-    case 'commit':
-      return subtotal.privateCommitBytes;
-    case 'threads':
-      return subtotal.threadCount;
-    case 'handles':
-      return subtotal.handleCount;
-    // GPU is not summed over a subtree: it is a maximum over concurrent
-    // engines, and adding two processes' maxima would not mean anything.
-    case 'gpu':
-      return process.gpuPercent;
-    case 'gpuMemory':
-      return process.gpuDedicatedMemoryBytes;
-    case 'ioRead':
-      return subtotal.ioReadBytesPerSecond;
-    case 'ioWrite':
-      return subtotal.ioWriteBytesPerSecond;
-  }
-}
-
-/**
- * Compare two extracted values.
- *
- * An unmeasured value sorts to the bottom in either direction rather than being
- * treated as zero, so "no measurement yet" never outranks a real one.
- */
-function compareValues(
-  left: number | string | undefined,
-  right: number | string | undefined,
-  direction: number,
-): number {
-  if (typeof left === 'string' || typeof right === 'string') {
-    return (
-      String(left ?? '').localeCompare(String(right ?? ''), undefined, {
-        sensitivity: 'base',
-      }) * direction
-    );
-  }
-  if (left === undefined && right === undefined) return 0;
-  if (left === undefined) return 1;
-  if (right === undefined) return -1;
-  return (left - right) * direction;
-}
-
-function processComparator(
-  key: SortKey,
-  descending: boolean,
-  cpuMode: CpuMode,
-): (a: ProcessSnapshot, b: ProcessSnapshot) => number {
-  const direction = descending ? -1 : 1;
-  return (a, b) =>
-    compareValues(processValue(a, key, cpuMode), processValue(b, key, cpuMode), direction);
-}
-
-function nodeComparator(
-  key: SortKey,
-  descending: boolean,
-  cpuMode: CpuMode,
-): (a: ProcessTreeNode, b: ProcessTreeNode) => number {
-  const direction = descending ? -1 : 1;
-  return (a, b) =>
-    compareValues(nodeValue(a, key, cpuMode), nodeValue(b, key, cpuMode), direction);
-}

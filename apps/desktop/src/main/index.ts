@@ -12,6 +12,7 @@ import {
 } from '@shared/process-actions.js';
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
+import { showColumnMenu } from './column-menu.js';
 import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
 import { RESTARTED_AS_ADMINISTRATOR_ARGUMENT, restartAsAdministrator } from './elevation.js';
 import { ExportService } from './export-service.js';
@@ -216,6 +217,14 @@ function quit(): void {
   app.quit();
 }
 
+/**
+ * Read command lines exactly while the Command line column is showing. Off
+ * otherwise: it costs a query per new process, and nothing else needs it.
+ */
+function followCommandLineColumn(columns: readonly string[]): void {
+  telemetry?.setConfig({ collectCommandLines: columns.includes('commandLine') });
+}
+
 /** Restart as administrator, asking Windows first. See elevation.ts. */
 function restartElevated(): void {
   void restartAsAdministrator({
@@ -273,6 +282,13 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     return processActions.showMenu(BrowserWindow.fromWebContents(event.sender), valid);
   });
   ipcMain.handle(IpcChannel.RestartAsAdministrator, () => restartElevated());
+  ipcMain.handle(IpcChannel.GetProcessColumns, () => settings?.processes.columns ?? []);
+  ipcMain.handle(IpcChannel.ShowColumnMenu, (event) => {
+    if (!settings) return [];
+    return showColumnMenu(BrowserWindow.fromWebContents(event.sender), settings, (columns) =>
+      followCommandLineColumn(columns),
+    );
+  });
   ipcMain.handle(IpcChannel.SetProcessAffinity, (event, key: unknown, processors: unknown) => {
     const valid = readProcessorIndices(processors);
     if (!isProcessKey(key) || !valid || !processActions) return;
@@ -461,6 +477,7 @@ if (!app.requestSingleInstanceLock()) {
     // that will not open must not stop the application from measuring anything.
     step('TM-1008', 'history', () => telemetry?.setHistory(historyPath(), settings?.history.enabled ?? false));
     step('TM-1009', 'sampling', () => telemetry?.start());
+    followCommandLineColumn(settings?.processes.columns ?? []);
 
     step('TM-1010', 'tray', () => {
       if (!widget) return;

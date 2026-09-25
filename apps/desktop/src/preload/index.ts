@@ -46,6 +46,8 @@ const api: TaskManagerApi = {
   restartAsAdministrator: () => ipcRenderer.invoke(IpcChannel.RestartAsAdministrator),
   setProcessAffinity: (key: string, processors: number[]) =>
     ipcRenderer.invoke(IpcChannel.SetProcessAffinity, key, processors),
+  getProcessColumns: () => ipcRenderer.invoke(IpcChannel.GetProcessColumns),
+  showColumnMenu: () => ipcRenderer.invoke(IpcChannel.ShowColumnMenu),
 
   getDiagnostics: () => ipcRenderer.invoke(IpcChannel.GetDiagnostics),
   openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),

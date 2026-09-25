@@ -7,6 +7,7 @@ import {
   formatPercent,
 } from '@task-manager/shared';
 import { Field } from './primitives.js';
+import { useCollectorConfig } from '../lib/hooks.js';
 
 const DETAIL_FAILURE_TEXT: Record<string, string> = {
   accessDenied:
@@ -24,6 +25,7 @@ export function ProcessDetails({
   onClose: () => void;
 }): React.JSX.Element {
   const failure = process.detailFailure;
+  const config = useCollectorConfig();
 
   return (
     <aside className="flex w-96 shrink-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
@@ -50,7 +52,14 @@ export function ProcessDetails({
 
         <SectionTitle>Identity</SectionTitle>
         <Field label="Image path" value={process.imagePath ?? '—'} mono />
-        <Field label="Command line" value={process.commandLine ?? '—'} mono />
+        <Field
+          label="Command line"
+          value={
+            process.commandLine ??
+            (config?.collectCommandLines ? '—' : 'Read only while the Command line column is on')
+          }
+          mono={process.commandLine !== undefined}
+        />
         <Field label="User" value={process.userName ?? '—'} />
         <Field label="Parent PID" value={process.parentPid} />
         <Field
