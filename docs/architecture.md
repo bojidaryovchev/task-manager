@@ -184,6 +184,66 @@ A drive is asked every ten seconds — it has orders of magnitude more thermal m
 than a die, and each query is an IOCTL to the device — so a reading can be ten
 seconds old, and its tooltip says so.
 
+## The tray icon
+
+CPU, memory and GPU as three live bars in the notification area, the way Windows
+Task Manager shows CPU there, with the exact figures in the tooltip. It reads
+the same snapshots as the widget, chooses its values the same way (the GPU is
+picked by one shared function, so the tray, the widget and the sidebar cannot
+describe different adapters), and computes nothing.
+
+Three facts shape it. All three were established by reading Electron's source
+or by measurement, not assumed.
+
+**The tray uses the 1x bitmap at its native pixel size.** Electron's
+`Tray::SetImage` asks `NativeImage::GetHICON` for an icon of the small-icon
+size, and `GetHICON` ignores that size: it builds the icon from the 1x
+representation as it stands, and Windows rescales the result. Supplying
+high-DPI representations does nothing. So the icon is drawn at exactly the
+notification area's pixel size (24 at 150% scaling) as a 1x image, and follows
+the display when scaling changes. The application logo used to be loaded at 16
+pixels, which is why it arrived stretched and soft on a scaled display. It is
+now sized the same way.
+
+**The pixel format is BGRA with premultiplied alpha.** Verified by writing a
+known pixel through `createFromBitmap` and decoding the PNG it produced. Every
+pixel the icon draws is either fully opaque or fully transparent, and a
+transparent pixel is all zeroes, so premultiplication never changes a colour.
+
+**Every redraw holds graphics handles until garbage collection.** Measured:
+each `setImage` left 3 GDI objects and 1 USER object alive. Over 1,000 redraws
+that came to 3,000 GDI objects, and it did not come down on its own. Electron
+tells V8 only about each image's few kilobytes of pixels, not its handles, so V8
+sees no reason to collect. At two redraws a second that walks towards the
+10,000-object per-process quota, and running out of GDI objects breaks drawing
+throughout the process, not just in the tray.
+
+Two things bound it. The icon is only redrawn when a bar moves by at least a
+pixel. And after every 100 redraws a collection is forced, which caps what can
+be outstanding however lazy the collector is. Measured on the running
+application over several minutes, with the window open and then closed to the
+tray: GDI objects rose to a peak of 313 and fell back to 34-73 at each
+collection, USER objects peaked at 130, and each forced collection took 3.5 ms.
+If a collection cannot be arranged at all, the live icon stays off and says so
+(`TM-5004`) rather than letting the handles build up.
+
+A bar with no reading this interval is drawn as an empty track, and the tooltip
+says `n/a` rather than `0%`. A machine with no hardware GPU gets two bars, not an
+empty third that would read as an idle GPU.
+
+### Hiding and closing to the tray
+
+Minimising the main window hides it: it leaves the taskbar and comes back from
+the tray as the same window, instantly. Closing it closes it: the window and its
+renderer are gone, and the memory they held is released while the application
+keeps measuring in the tray. Reopening builds the window again. The two differ
+deliberately. A minimise means "back in a moment". A close means "not now", and
+a monitor that waits in the tray should cost as little as it can while it waits.
+
+Both depend on the tray actually existing. If it failed to start (`TM-1010`),
+minimise and close behave normally, because otherwise the window would vanish
+with no way back but launching the application again.
+
 ## One PDH query, one collection
 
 Disk, network, GPU, thermal zones and the two frequency-aware CPU counters all

@@ -25,9 +25,29 @@ export interface HistorySettings {
   enabled: boolean;
 }
 
+export interface TraySettings {
+  /**
+   * Draw CPU, memory and GPU as live bars in the tray icon, as Windows Task
+   * Manager does for CPU, instead of the application logo.
+   */
+  liveIcon: boolean;
+  /**
+   * Minimising the main window hides it to the tray instead of the taskbar,
+   * like Windows Task Manager's "Hide when minimized".
+   */
+  hideWhenMinimized: boolean;
+  /**
+   * Closing the main window leaves the application running in the tray
+   * instead of exiting. The window itself is closed rather than hidden, so its
+   * renderer's memory is released while the application waits in the tray.
+   */
+  closeToTray: boolean;
+}
+
 export interface AppSettings {
   widget: WidgetSettings;
   history: HistorySettings;
+  tray: TraySettings;
 }
 
 const DEFAULTS: AppSettings = {
@@ -35,6 +55,9 @@ const DEFAULTS: AppSettings = {
   // On by default: history is what makes "why did this happen five minutes ago"
   // answerable, and it costs one small buffered write every few seconds.
   history: { enabled: true },
+  // Both on by default: this is how Windows Task Manager behaves, and it is
+  // what the application is modelled on.
+  tray: { liveIcon: true, hideWhenMinimized: true, closeToTray: true },
 };
 
 const WRITE_DEBOUNCE_MS = 400;
@@ -85,6 +108,23 @@ export class SettingsStore {
     return this.#settings.history;
   }
 
+  get tray(): TraySettings {
+    return this.#settings.tray;
+  }
+
+  /** Merge a change into the tray settings and schedule a save. */
+  updateTray(patch: Partial<TraySettings>): TraySettings {
+    const next = { ...this.#settings.tray, ...patch };
+    // Strict booleans, so a stray value from anywhere cannot flip either one.
+    this.#settings.tray = {
+      liveIcon: next.liveIcon === true,
+      hideWhenMinimized: next.hideWhenMinimized === true,
+      closeToTray: next.closeToTray === true,
+    };
+    this.#scheduleWrite();
+    return this.#settings.tray;
+  }
+
   setHistoryEnabled(enabled: boolean): HistorySettings {
     this.#settings.history = { enabled: enabled === true };
     this.#scheduleWrite();
@@ -116,10 +156,18 @@ export class SettingsStore {
       const source = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as {
         widget?: unknown;
         history?: { enabled?: unknown };
+        tray?: { liveIcon?: unknown; hideWhenMinimized?: unknown; closeToTray?: unknown };
       };
       return {
         widget: normaliseWidgetSettings(source.widget),
         history: { enabled: source.history?.enabled !== false },
+        // On unless explicitly turned off, so a settings file written before
+        // these existed picks up the defaults rather than switching them off.
+        tray: {
+          liveIcon: source.tray?.liveIcon !== false,
+          hideWhenMinimized: source.tray?.hideWhenMinimized !== false,
+          closeToTray: source.tray?.closeToTray !== false,
+        },
       };
     } catch (error) {
       // Missing on first run, and unreadable or corrupt if something went wrong.
@@ -131,7 +179,11 @@ export class SettingsStore {
           message: `${this.#path}: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
-      return { widget: { ...DEFAULTS.widget }, history: { ...DEFAULTS.history } };
+      return {
+        widget: { ...DEFAULTS.widget },
+        history: { ...DEFAULTS.history },
+        tray: { ...DEFAULTS.tray },
+      };
     }
   }
 

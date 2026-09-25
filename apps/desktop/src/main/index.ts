@@ -158,6 +158,16 @@ function createMainWindow(): BrowserWindow {
   const webContentsId = window.webContents.id;
   resilience?.watchWindow(window, 'main window');
   window.once('ready-to-show', () => window.show());
+
+  // Windows Task Manager's "Hide when minimized": the window leaves the taskbar
+  // and lives in the tray until it is brought back from there.
+  window.on('minimize', () => {
+    if (!settings?.tray.hideWhenMinimized) return;
+    // Only with a tray icon to come back through. If the tray failed to start,
+    // hiding would take the window off the taskbar with no way to reach it.
+    if (!tray?.isPresent) return;
+    window.hide();
+  });
   // A closed window must not keep a process-list subscription alive.
   window.on('closed', () => {
     telemetry?.releaseWindow(webContentsId);
@@ -389,7 +399,12 @@ if (!app.requestSingleInstanceLock()) {
 
     step('TM-1010', 'tray', () => {
       if (!widget) return;
-      tray = new AppTray({ widget, onShowMainWindow: showMainWindow });
+      tray = new AppTray({
+        widget,
+        settings: settings as SettingsStore,
+        onShowMainWindow: showMainWindow,
+        logger,
+      });
       tray.create(iconPath());
       // The tray tooltip consumes the same snapshots as every other presentation.
       telemetry?.subscribe((snapshot) => tray?.update(snapshot));
@@ -425,6 +440,11 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     if (quitting) return;
     if (widget?.settings.enabled) return;
+    // Close to tray: the window is gone and its renderer's memory with it, but
+    // the application keeps measuring and the tray brings the window back.
+    // Only with a tray icon to come back through - without one this would leave
+    // a process running with no way to reach it but launching it again.
+    if (settings?.tray.closeToTray && tray?.isPresent) return;
     app.quit();
   });
 

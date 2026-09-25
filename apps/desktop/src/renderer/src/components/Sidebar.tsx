@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { formatPercent } from '@task-manager/shared';
+import { busiestHardwareAdapter, formatPercent } from '@task-manager/shared';
 import { useHostInfo, useTelemetry } from '../lib/hooks.js';
 import logoUrl from '../assets/logo.png';
 
@@ -112,12 +112,10 @@ const NavValue = memo(function NavValue({ id }: { id: PageId }) {
         return snapshot.cpu.aggregateTimeUtilizationPercent ?? null;
       case 'memory':
         return snapshot.memory.physicalUtilizationPercent;
-      case 'gpu': {
-        const values = snapshot.gpu.adapters
-          .map((adapter) => adapter.utilisationPercent)
-          .filter((value): value is number => value !== undefined);
-        return values.length > 0 ? Math.max(...values) : null;
-      }
+      case 'gpu':
+        // The same adapter the widget and the tray describe, rather than a
+        // maximum that also counted the software renderer.
+        return busiestHardwareAdapter(snapshot)?.utilisationPercent ?? null;
       case 'processes':
         // From the system-wide counter, which is present whether or not this
         // window is subscribed to the full process list.

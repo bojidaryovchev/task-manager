@@ -73,6 +73,13 @@ const surface3 = color('--color-surface-3');
 // The widget paints rgba(11,13,16,0.92) over whatever is behind it. The worst
 // case for contrast is a white desktop showing through.
 const widgetOverWhite = over(toRgb('#0b0d10'), 0.92, [255, 255, 255]);
+// The tray icon sits on the Windows taskbar, which is dark or light depending
+// on the user's theme. These are WinUI's base fill colours for each theme
+// (SolidBackgroundFillColorBase); transparency effects move the real taskbar a
+// little either way, which is why the tray checks below keep a margin.
+const darkTaskbar = toRgb('#202020');
+const lightTaskbar = toRgb('#f3f3f3');
+const trayTrack = color('--color-chart-grid');
 
 /** [description, foreground token, background, threshold] */
 const CHECKS = [
@@ -103,6 +110,18 @@ const CHECKS = [
   ['Widget CPU value', '--color-cpu', widgetOverWhite, AA_NORMAL],
   ['Widget memory value', '--color-memory', widgetOverWhite, AA_NORMAL],
   ['Widget warn value', '--color-warn', widgetOverWhite, AA_NORMAL],
+  // Tray icon. The bars are graphical objects, so 3:1 is the bar. A bar's
+  // value is the edge between its fill and its own dark track, which the
+  // taskbar colour cannot affect.
+  ['Tray CPU bar on its track', '--color-cpu', trayTrack, AA_LARGE],
+  ['Tray memory bar on its track', '--color-memory', trayTrack, AA_LARGE],
+  ['Tray GPU bar on its track', '--color-gpu', trayTrack, AA_LARGE],
+  // The white separators have to divide the columns from one another.
+  ['Tray track against its separators', '--color-chart-grid', color('--color-text-primary'), AA_LARGE],
+  // The outline is what marks the icon's edge on either taskbar: a white
+  // margin disappears into a light one.
+  ['Tray outline on a dark taskbar', '--color-text-muted', darkTaskbar, AA_LARGE],
+  ['Tray outline on a light taskbar', '--color-text-muted', lightTaskbar, AA_LARGE],
 ];
 
 let failures = 0;

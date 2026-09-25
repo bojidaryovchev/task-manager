@@ -1,5 +1,6 @@
 import type { SystemSnapshot, TemperatureReading } from '@task-manager/telemetry-types';
 import {
+  busiestHardwareAdapter,
   formatBitsPerSecond,
   formatBytes,
   formatBytesPerSecond,
@@ -76,16 +77,11 @@ const ACCENTS: Partial<Record<WidgetMetricId, string>> = {
   thermalZone: 'var(--color-text-secondary)',
 };
 
-/** The busiest hardware adapter, which is what a single GPU number means here. */
-function busiestAdapter(snapshot: SystemSnapshot) {
-  return snapshot.gpu.adapters
-    .filter((adapter) => !adapter.isSoftware)
-    .reduce<SystemSnapshot['gpu']['adapters'][number] | null>(
-      (best, adapter) =>
-        (adapter.utilisationPercent ?? -1) > (best?.utilisationPercent ?? -1) ? adapter : best,
-      null,
-    );
-}
+/**
+ * The adapter a single GPU number describes. Shared with the tray and the
+ * sidebar, so the three can never pick different adapters.
+ */
+const busiestAdapter = busiestHardwareAdapter;
 
 const DESCRIPTORS = new Map(WIDGET_METRICS.map((metric) => [metric.id, metric]));
 

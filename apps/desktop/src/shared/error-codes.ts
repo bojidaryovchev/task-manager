@@ -31,7 +31,7 @@
  * | 2xxx | Native collector |
  * | 3xxx | History database |
  * | 4xxx | Settings |
- * | 5xxx | Desktop widget |
+ * | 5xxx | Desktop widget and tray |
  * | 6xxx | Export |
  * | 7xxx | Crash handling and recovery |
  * | 8xxx | Renderer |
@@ -44,6 +44,7 @@ export type ErrorSubsystem =
   | 'history'
   | 'settings'
   | 'widget'
+  | 'tray'
   | 'export'
   | 'crash'
   | 'renderer'
@@ -221,6 +222,21 @@ export const ERROR_CODES = {
     meaning:
       'A measurement from the widget was outside sane bounds and was ignored, so it keeps its previous size.',
     action: 'Cosmetic. Report it if the widget is visibly the wrong size.',
+  },
+  'TM-5003': {
+    subsystem: 'tray',
+    title: 'The live tray icon could not be drawn',
+    meaning:
+      'The tray has gone back to the plain application icon for the rest of this session. Its tooltip still shows the current values and everything else is unaffected.',
+    action:
+      'Report the message beside this code. Restarting the application tries the live icon again.',
+  },
+  'TM-5004': {
+    subsystem: 'tray',
+    title: 'The live tray icon is off because its cost could not be bounded',
+    meaning:
+      'Every redraw of the icon holds a few graphics handles until they are explicitly reclaimed, and reclaiming them was not possible here. Rather than let them build up for as long as the application runs, the tray shows the plain icon instead.',
+    action: 'Nothing is lost but the bars; the tooltip still shows the values. Report this code.',
   },
 
   // --- 6xxx export ----------------------------------------------------------

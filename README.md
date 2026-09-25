@@ -264,8 +264,13 @@ local minidumps for native faults; nothing is uploaded anywhere. A sampling
 thread that dies is detected and reported, because a monitor showing stale
 numbers while looking healthy is the worst failure it can have.
 
-**Tray** — live tooltip from the same snapshots, and the menu that controls the
-widget. It is also the guaranteed way out of click-through mode.
+**Tray** — CPU, memory and GPU as three live bars in the notification area,
+the way Windows Task Manager shows CPU there, with the exact figures in the
+tooltip. Drawn at the tray's exact pixel size so nothing is resampled, and
+redrawn only when a bar moves. Minimising hides the window to the tray; closing
+it leaves the application running there with the window's memory released.
+Both are options in the tray menu, alongside the live icon itself. The tray is
+also the guaranteed way out of the widget's click-through mode.
 
 **Self-measurement** — per-subsystem collection cost, duty cycle, dropped
 snapshots, tracked identity count.
@@ -344,6 +349,11 @@ error of −2.01% attributable to scheduler contention on an already-busy machin
   machine. Those adapters report no temperature. Two identical NVIDIA boards also
   report none per-adapter, because nothing documents NVML's enumeration order as
   matching DXGI's and guessing could show one card's temperature on the other.
+- **Windows 11 puts new tray icons in the overflow.** The first time the
+  application runs, its icon lands behind the ^ arrow next to the clock, and
+  Windows gives applications no supported way to promote themselves. Drag it
+  onto the taskbar, or switch it on under Settings > Personalization > Taskbar >
+  Other system tray icons, to see the live bars.
 - **Windows 11 x64 only.** The collectors are deliberately Windows-native; there
   is no cross-platform abstraction compromising them.
 

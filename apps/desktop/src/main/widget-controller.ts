@@ -119,7 +119,14 @@ export class WidgetController {
    * `includeWidgetToggle` adds the show/hide entry, which the tray needs and the
    * widget's own menu does not (it has "Hide widget" instead).
    */
-  buildMenuTemplate(context: 'tray' | 'widget'): MenuItemConstructorOptions[] {
+  buildMenuTemplate(
+    context: 'tray' | 'widget',
+    /**
+     * Items only the tray menu carries, placed just above Exit. The tray passes
+     * its own settings here, so this controller does not need to know about them.
+     */
+    trayItems: MenuItemConstructorOptions[] = [],
+  ): MenuItemConstructorOptions[] {
     const settings = this.settings;
     const template: MenuItemConstructorOptions[] = [
       {
@@ -195,6 +202,7 @@ export class WidgetController {
         checked: settings.enabled,
         click: () => this.setEnabled(!settings.enabled),
       });
+      if (trayItems.length > 0) template.push({ type: 'separator' }, ...trayItems);
     } else {
       template.push({ label: 'Hide widget', click: () => this.setEnabled(false) });
     }

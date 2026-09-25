@@ -17,6 +17,7 @@ const SUBSYSTEM_LABELS: Record<ErrorSubsystem, string> = {
   history: 'History',
   settings: 'Settings',
   widget: 'Widget',
+  tray: 'Tray',
   export: 'Export',
   crash: 'Crash handling',
   renderer: 'Interface',
