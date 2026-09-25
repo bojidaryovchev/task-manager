@@ -9,10 +9,12 @@ import {
   descendantsOf,
   describeForClipboard,
   reportClosing,
+  reportDump,
   reportEnding,
   reportSetting,
   reportShellRestart,
   reportSwitching,
+  windowsErrorText,
   type MenuTarget,
   type ProcessMenuHandlers,
   type ProcessMenuModel,
@@ -64,6 +66,7 @@ function state(overrides: Partial<ProcessState> = {}): ProcessState {
     status: 'running',
     canEnd: true,
     canAdjust: true,
+    canDump: true,
     isCritical: false,
     windowCount: 0,
     isShell: false,
@@ -93,6 +96,7 @@ function handlers(): ProcessMenuHandlers {
     setEfficiency: vi.fn(),
     affinity: vi.fn(),
     restartShell: vi.fn(),
+    createDump: vi.fn(),
   };
 }
 
@@ -230,6 +234,45 @@ describe('the process menu', () => {
     const copy = item(menu, 'Copy').submenu as MenuItemConstructorOptions[];
     item(copy, 'PID').click?.({} as never, undefined, {} as never);
     expect(calls.copy).toHaveBeenCalledWith('4242');
+  });
+});
+
+describe('memory dumps', () => {
+  it('offers a dump of one process, in Windows Task Manager words', () => {
+    expect(labels(buildProcessMenu(model([target()]), handlers()))).toContain('Create memory dump file');
+    // Of several there is no one process to dump.
+    expect(labels(buildProcessMenu(model([target(), target()]), handlers()))).not.toContain(
+      'Create memory dump file',
+    );
+  });
+
+  it('says when a dump needs administrator, and when Windows refuses outright', () => {
+    const refused = target({}, { canDump: false });
+    expect(labels(buildProcessMenu(model([refused]), handlers()))).toContain(
+      'Create memory dump file (needs administrator)',
+    );
+    const protectedMenu = buildProcessMenu(model([refused], { elevated: true }), handlers());
+    expect(item(protectedMenu, 'Create memory dump file (Windows refuses)').enabled).toBe(false);
+  });
+
+  it('reports a refusal with the way through, and a failure with its error', () => {
+    const chrome = process({ name: 'chrome.exe' });
+    const denied = reportDump(chrome, { outcome: 'accessDenied', withHandles: false }, false);
+    expect(denied.code).toBe('TM-0026');
+    expect(denied.offerElevation).toBe(true);
+    const failed = reportDump(
+      chrome,
+      { outcome: 'failed', win32Error: 0x80070070, withHandles: false },
+      true,
+    );
+    expect(failed.code).toBe('TM-0027');
+    expect(failed.detail).toContain('Windows error 0x80070070.');
+  });
+
+  it('writes an HRESULT in hex and a plain error in decimal', () => {
+    expect(windowsErrorText(0x80070070)).toBe('0x80070070');
+    expect(windowsErrorText(5)).toBe('5');
+    expect(windowsErrorText(undefined)).toBe('unknown');
   });
 });
 

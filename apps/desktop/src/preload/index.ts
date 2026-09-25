@@ -98,6 +98,15 @@ const api: TaskManagerApi = {
     };
   },
   takePendingAppCommand: () => ipcRenderer.invoke(IpcChannel.TakePendingAppCommand),
+  onActivity: (listener: (label: string | null) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, label: unknown): void => {
+      listener(typeof label === 'string' ? label : null);
+    };
+    ipcRenderer.on(IpcChannel.ActivityEvent, handler);
+    return () => {
+      ipcRenderer.removeListener(IpcChannel.ActivityEvent, handler);
+    };
+  },
 
   getDiagnostics: () => ipcRenderer.invoke(IpcChannel.GetDiagnostics),
   openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),

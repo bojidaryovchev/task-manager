@@ -589,6 +589,29 @@ A process Windows will not let this application open at all - many
 rights marked "(needs administrator)". It used to be treated as gone and
 offered only Copy.
 
+### Memory dumps
+
+Create memory dump file writes a full dump of one process with
+`MiniDumpWriteDump` - all of its memory, its threads, memory regions and
+unloaded modules, and its open handles when Windows allows the extra access
+that needs - to the temporary folder, where Windows Task Manager writes its
+own, named after the process, its PID and the local time. It opens the
+process by PID and creation time like every other action, never overwrites a
+file, and removes a partial one when writing fails. The process keeps running.
+Checked with a test that dumps a process of its own and finds the minidump
+signature, and end to end from the real menu on a helper process: a 14 MB
+dump, the process still running afterwards.
+
+The dialog afterwards says where the file is and offers its location, and
+that a dump holds everything the process had in memory, which can include
+passwords, so it should be shared with care. Reading another account's or an
+elevated process's memory needs administrator rights, and protected processes
+refuse even those; the menu says which.
+
+While a dump is written, or a service starts or stops, a line at the top of
+the window says so: each can take seconds, which would otherwise look like
+nothing happening.
+
 ### From the widget
 
 The rows of the Top consumers layout have the process menu too, less what needs

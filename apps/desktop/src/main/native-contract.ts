@@ -17,6 +17,7 @@
 
 import type {
   JsActionOutcome,
+  JsDumpOutcome,
   JsCollectorConfig,
   JsHistoryPoint,
   JsHistoryResult,
@@ -31,7 +32,12 @@ import type {
   JsStartupOutcome,
   JsSystemSnapshot,
 } from '@task-manager/telemetry-native';
-import type { ActionOutcome, ProcessState, SettingOutcome } from '@shared/process-actions.js';
+import type {
+  ActionOutcome,
+  DumpOutcome,
+  ProcessState,
+  SettingOutcome,
+} from '@shared/process-actions.js';
 import type { ServiceOutcome, ServiceState } from '@shared/services.js';
 import type { StartupItem, StartupOutcome } from '@shared/startup.js';
 import type { LaunchOutcome, ShellOutcome } from './native.js';
@@ -72,6 +78,8 @@ type _SettingOutcomeIsDescribed = AssignableTo<JsSettingOutcome, SettingOutcome>
 type _SettingOutcomeIsProduced = AssignableTo<SettingOutcome, JsSettingOutcome>;
 type _ShellOutcomeIsDescribed = AssignableTo<JsShellOutcome, ShellOutcome>;
 type _ShellOutcomeIsProduced = AssignableTo<ShellOutcome, JsShellOutcome>;
+type _DumpOutcomeIsDescribed = AssignableTo<JsDumpOutcome, DumpOutcome>;
+type _DumpOutcomeIsProduced = AssignableTo<DumpOutcome, JsDumpOutcome>;
 
 // Services: likewise.
 type _ServiceStateIsDescribed = AssignableTo<JsServiceState, ServiceState>;

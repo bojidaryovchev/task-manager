@@ -4,6 +4,7 @@ import { describeErrorCode, type ErrorCode } from '@shared/error-codes.js';
 import type { ShellOutcome } from './native.js';
 import type {
   ActionOutcome,
+  DumpOutcome,
   PriorityClassName,
   ProcessMenuContext,
   ProcessState,
@@ -56,6 +57,7 @@ export interface ProcessMenuHandlers {
   setEfficiency(enabled: boolean): void;
   affinity(): void;
   restartShell(): void;
+  createDump(): void;
 }
 
 /** Windows Task Manager's order and names for the priority classes. */
@@ -137,8 +139,9 @@ export function buildProcessMenu(
 
   const representative = single?.process ?? (model.applicationName ? targets[0]!.process : null);
   if (representative) {
+    items.push({ type: 'separator' });
+    if (single) items.push(dumpItem(single, model, handlers));
     items.push(
-      { type: 'separator' },
       {
         label: 'Open file location',
         enabled: Boolean(representative.imagePath),
@@ -212,6 +215,19 @@ function tuningItems(
           },
         ]),
   ];
+}
+
+/** Create memory dump file, as Windows Task Manager words it. */
+function dumpItem(
+  target: MenuTarget,
+  model: ProcessMenuModel,
+  handlers: ProcessMenuHandlers,
+): MenuItemConstructorOptions {
+  const label = 'Create memory dump file';
+  if (target.state.canDump) return { label, click: handlers.createDump };
+  // Offered anyway without administrator rights: choosing it explains.
+  if (!model.elevated) return { label: `${label} (needs administrator)`, click: handlers.createDump };
+  return { label: `${label} (Windows refuses)`, enabled: false };
 }
 
 function endItem(model: ProcessMenuModel, handlers: ProcessMenuHandlers): MenuItemConstructorOptions {
@@ -616,6 +632,40 @@ export function confirmShellRestart(): Confirmation {
     confirm: 'Restart',
     offerDontAsk: false,
   };
+}
+
+/** A Windows error for a person: HRESULTs in hex, as Windows writes them. */
+export function windowsErrorText(code: number | undefined): string {
+  if (code === undefined) return 'unknown';
+  return code >= 0x8000_0000 ? `0x${code.toString(16).toUpperCase()}` : String(code);
+}
+
+/** What to tell the user when a dump was not written. */
+export function reportDump(process: ProcessSnapshot, outcome: DumpOutcome, elevated: boolean): Report {
+  switch (outcome.outcome) {
+    case 'notRunning':
+    case 'identityChanged':
+      return goneReport(process, { outcome: outcome.outcome });
+    case 'accessDenied':
+      return {
+        type: 'warning',
+        message: elevated
+          ? `Windows will not let any application read ${process.name}'s memory.`
+          : `Only administrators can write a memory dump of ${process.name}.`,
+        detail: codeLines('TM-0026'),
+        code: 'TM-0026',
+        offerElevation: !elevated,
+      };
+    case 'written':
+    case 'failed':
+      return {
+        type: 'error',
+        message: `The memory dump of ${process.name} could not be written.`,
+        detail: `Windows error ${windowsErrorText(outcome.win32Error)}.\n\n${codeLines('TM-0027')}`,
+        code: 'TM-0027',
+        offerElevation: false,
+      };
+  }
 }
 
 /** What to tell the user after restarting Explorer, or null when it came back. */

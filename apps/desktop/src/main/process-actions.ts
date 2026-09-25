@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs';
-import { BrowserWindow, clipboard, Menu, shell } from 'electron';
+import { join } from 'node:path';
+import { app, BrowserWindow, clipboard, Menu, shell } from 'electron';
+import { formatBytes } from '@task-manager/shared';
 import type { ProcessSnapshot, SystemSnapshot } from '@task-manager/telemetry-types';
 import type {
   ActionOutcome,
@@ -23,6 +25,7 @@ import {
   reportClosing,
   reportEnding,
   reportSetting,
+  reportDump,
   reportShellRestart,
   reportSwitching,
   type EndKind,
@@ -61,6 +64,8 @@ export interface ProcessActionsHost {
   showProcess?: (key: string) => void;
   /** Shared with the service actions, so only one action runs at a time. */
   gate: ActionGate;
+  /** Say what is under way, or null when it is done, for a long action. */
+  activity?: (label: string | null) => void;
 }
 
 /**
@@ -75,6 +80,7 @@ const UNINSPECTED: ProcessState = {
   status: 'running',
   canEnd: true,
   canAdjust: true,
+  canDump: true,
   windowCount: 0,
   isShell: false,
 };
@@ -186,6 +192,8 @@ export class ProcessActions {
           ),
         restartShell: () =>
           void this.#exclusive('restart Windows Explorer', () => this.#restartShell(window)),
+        createDump: () =>
+          void this.#exclusive('create memory dump', () => this.#createDump(window, representative)),
         affinity: () => {
           const { processors, affinity } = targets[0]!.state;
           if (!processors || !affinity) return;
@@ -346,6 +354,61 @@ export class ProcessActions {
       );
     }
     await this.#report(window, reportShellRestart(result.outcome, result.win32Error));
+  }
+
+  /**
+   * Write a full memory dump to the temporary folder, where Windows Task
+   * Manager writes its own, and say where.
+   */
+  async #createDump(window: BrowserWindow | null, process: ProcessSnapshot): Promise<void> {
+    const native = this.#host.native();
+    if (!native) return;
+    // Local time, as the clock on the taskbar shows it.
+    const now = new Date();
+    const two = (value: number): string => String(value).padStart(2, '0');
+    const stamp =
+      `${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}-` +
+      `${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
+    const stem = process.name.replace(/\.exe$/i, '').replace(/[^\w.-]+/g, '_');
+    const path = join(app.getPath('temp'), `${stem}-${process.pid}-${stamp}.dmp`);
+    this.#host.activity?.(`Writing a memory dump of ${process.name} (PID ${process.pid})…`);
+    let outcome;
+    try {
+      outcome = await native.createDumpFile(process.key, path);
+    } finally {
+      this.#host.activity?.(null);
+    }
+    if (outcome.outcome === 'written') {
+      const size = outcome.bytes === undefined ? '' : ` (${formatBytes(outcome.bytes)})`;
+      this.#host.logger?.info('process', `wrote a memory dump of ${process.name} (PID ${process.pid}) to ${path}${size}`);
+      const answer = await this.#ask(window, {
+        type: 'info',
+        title: 'Task Manager',
+        message: `The memory dump of ${process.name} was written.`,
+        detail:
+          `${path}${size}\n\n` +
+          (outcome.withHandles
+            ? ''
+            : 'It has the memory but not the list of open handles, which Windows would not give.\n\n') +
+          'It holds everything the process had in memory, which can include passwords and personal data, so share it with care. WinDbg and Visual Studio open it.',
+        buttons: ['Open file location', 'OK'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (answer.response === 0) shell.showItemInFolder(path);
+      return;
+    }
+    const report = reportDump(process, outcome, this.#host.elevated());
+    if (report.code) {
+      this.#host.logger?.warn(
+        report.code,
+        `could not write a memory dump of ${process.name} (PID ${process.pid}): ${outcome.outcome}${
+          outcome.win32Error === undefined ? '' : `, error ${outcome.win32Error}`
+        }`,
+      );
+    }
+    await this.#show(window, report);
   }
 
   /** Log and show a report, when there is one. */

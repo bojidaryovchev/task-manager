@@ -303,6 +303,15 @@ function showPageMenu(window: BrowserWindow | null, items: MenuItemSpec[]): Prom
   });
 }
 
+/** Tell every window what a long action is doing, or that it is done. */
+function setActivity(label: string | null): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+      window.webContents.send(IpcChannel.ActivityEvent, label);
+    }
+  }
+}
+
 /** Restart as administrator, asking Windows first. See elevation.ts. */
 function restartElevated(): void {
   void restartAsAdministrator({
@@ -623,6 +632,7 @@ if (!app.requestSingleInstanceLock()) {
       logger,
       restartElevated,
       gate,
+      activity: setActivity,
     });
     startupActions = new StartupActions({
       native: () => loadNative().module,
@@ -642,6 +652,7 @@ if (!app.requestSingleInstanceLock()) {
         restartElevated,
         showProcess: (key) => sendAppCommand({ kind: 'showProcess', key }),
         gate,
+        activity: setActivity,
       });
       appSettings = new AppSettingsController({
         settings: store,

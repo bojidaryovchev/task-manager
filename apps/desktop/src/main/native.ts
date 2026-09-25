@@ -11,6 +11,7 @@ import type {
 } from '@task-manager/telemetry-types';
 import type {
   ActionOutcome,
+  DumpOutcome,
   PriorityClassName,
   ProcessState,
   SettingOutcome,
@@ -52,6 +53,11 @@ export interface NativeTelemetryModule {
   bringProcessToFront(key: string): ActionOutcome;
   /** Show Windows' Properties dialog for a file. False when it could not. */
   showFileProperties(path: string): boolean;
+  /**
+   * Write a full memory dump of a process to `path`, which must not exist.
+   * The process keeps running.
+   */
+  createDumpFile(key: string, path: string): Promise<DumpOutcome>;
   /** Set a priority class. The class Windows actually applied is read back. */
   setProcessPriority(key: string, priorityClass: PriorityClassName): SettingOutcome;
   /**

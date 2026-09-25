@@ -16,6 +16,7 @@ import { DiskPage, GpuPage, NetworkPage } from './pages/Devices.js';
 import { HistoryPage } from './pages/History.js';
 import { RunTaskDialog } from './components/RunTaskDialog.js';
 import { PausedBanner } from './components/PausedBanner.js';
+import { ActivityBanner } from './components/ActivityBanner.js';
 import { SettingsPage } from './pages/Settings.js';
 import { ServicesPage } from './pages/Services.js';
 import { StartupPage } from './pages/Startup.js';
@@ -119,6 +120,7 @@ export function App(): React.JSX.Element {
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <StartupBanner />
             <PausedBanner />
+            <ActivityBanner />
             {page === 'overview' && <OverviewPage />}
             {page === 'cpu' && <CpuPage />}
             {page === 'memory' && <MemoryPage />}

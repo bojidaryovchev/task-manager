@@ -255,6 +255,20 @@ export const ERROR_CODES = {
       'Windows refused to record the change, for the reason given by the Windows error number alongside this code. The program starts or not exactly as before.',
     action: 'Try again. If it keeps failing, report this code and the Windows error number.',
   },
+  'TM-0026': {
+    subsystem: 'actions',
+    title: "Windows refused to let Task Manager read the process's memory",
+    meaning:
+      'A memory dump is a copy of everything the process has in memory, and Windows only lets an application read that from processes at or below its own level. Protected processes refuse even administrators. Nothing was written.',
+    action: 'Restart Task Manager as administrator and try again.',
+  },
+  'TM-0027': {
+    subsystem: 'actions',
+    title: 'The memory dump could not be written',
+    meaning:
+      'Windows reported an error while writing it, given by number alongside this code; the most common is a full disk, since a dump is as large as the memory the process uses. Nothing was left behind.',
+    action: 'Free some disk space and try again, or report this code and the error number.',
+  },
 
   // --- 1xxx startup ---------------------------------------------------------
   'TM-1001': {

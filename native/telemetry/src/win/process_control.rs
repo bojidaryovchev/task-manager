@@ -18,13 +18,17 @@
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ACCESS_DENIED, FILETIME, HANDLE, STILL_ACTIVE, WAIT_OBJECT_0,
 };
+use windows_sys::Win32::System::Diagnostics::Debug::{
+    MiniDumpWithFullMemory, MiniDumpWithFullMemoryInfo, MiniDumpWithHandleData,
+    MiniDumpWithThreadInfo, MiniDumpWithUnloadedModules, MiniDumpWriteDump,
+};
 use windows_sys::Win32::System::Threading::{
     GetExitCodeProcess, GetPriorityClass, GetProcessAffinityMask, GetProcessInformation,
     GetProcessTimes, IsProcessCritical, OpenProcess, ProcessPowerThrottling, SetPriorityClass,
     SetProcessAffinityMask, SetProcessInformation, TerminateProcess, WaitForSingleObject,
-    PROCESS_ACCESS_RIGHTS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
-    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
-    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    PROCESS_ACCESS_RIGHTS, PROCESS_DUP_HANDLE, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_SET_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE, PROCESS_VM_READ,
 };
 
 /// Access to end a process and then wait to see that it did end.
@@ -33,6 +37,10 @@ pub const ACCESS_END: PROCESS_ACCESS_RIGHTS = PROCESS_TERMINATE | PROCESS_SYNCHR
 pub const ACCESS_ADJUST: PROCESS_ACCESS_RIGHTS = PROCESS_SET_INFORMATION;
 /// Nothing beyond the query access every open includes.
 pub const ACCESS_QUERY: PROCESS_ACCESS_RIGHTS = 0;
+/// Access to write a memory dump, as `MiniDumpWriteDump` documents it.
+pub const ACCESS_DUMP: PROCESS_ACCESS_RIGHTS = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+/// With this as well, the dump also lists the process's handles.
+pub const ACCESS_DUMP_HANDLES: PROCESS_ACCESS_RIGHTS = ACCESS_DUMP | PROCESS_DUP_HANDLE;
 
 /// The exit code a process ended this way reports. Windows Task Manager's own
 /// choice is not documented; 1 is the conventional "did not finish normally".
@@ -102,6 +110,47 @@ impl Process {
 
     fn creation_time(&self) -> Option<i64> {
         creation_time(self.handle)
+    }
+
+    /// Write a full memory dump of the process to `file`: all of its memory,
+    /// its threads, its memory regions and its unloaded modules, and its
+    /// handles when `with_handles` (which needs `ACCESS_DUMP_HANDLES`). The
+    /// process keeps running. On failure, the error `MiniDumpWriteDump`
+    /// leaves, which is an HRESULT.
+    pub fn write_dump(
+        &self,
+        pid: u32,
+        file: &std::fs::File,
+        with_handles: bool,
+    ) -> Result<(), u32> {
+        use std::os::windows::io::AsRawHandle;
+        let mut kind = MiniDumpWithFullMemory
+            | MiniDumpWithFullMemoryInfo
+            | MiniDumpWithThreadInfo
+            | MiniDumpWithUnloadedModules;
+        if with_handles {
+            kind |= MiniDumpWithHandleData;
+        }
+        // SAFETY: an open process handle with the documented access, a file
+        // handle open for writing that outlives the call, and no exception,
+        // user stream or callback.
+        let ok = unsafe {
+            MiniDumpWriteDump(
+                self.handle,
+                pid,
+                file.as_raw_handle() as HANDLE,
+                kind,
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+            )
+        };
+        if ok == 0 {
+            // SAFETY: reading the calling thread's last error code.
+            Err(unsafe { GetLastError() })
+        } else {
+            Ok(())
+        }
     }
 
     /// Whether the process has finished running.

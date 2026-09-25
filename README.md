@@ -217,10 +217,11 @@ columns: user, priority, start time, description, publisher, path, command line
 and more, all already measured. Run new task opens a program, folder, document
 or website the way Windows' Run dialog does, optionally as administrator, from
 the Processes page or the tray. Right-click any text for Cut, Copy and Paste.
-Right-click a process for End task, End process tree, Close window, Switch to, Set priority, Efficiency mode, Set affinity, Restart
-(for Windows Explorer), Open file location, Properties, Search online and Copy;
-select several with Ctrl or Shift, end them with Delete, and hold Ctrl to freeze
-the list while you aim, as in Windows Task Manager. Every action checks the
+Right-click a process for End task, End process tree, Close window, Switch to,
+Set priority, Efficiency mode, Set affinity, Restart (for Windows Explorer),
+Create memory dump file, Open file location, Properties, Search online, Copy and
+Go to service; select several with Ctrl or Shift, end them with Delete, and hold
+Ctrl to freeze the list while you aim, as in Windows Task Manager. Every action checks the
 process's start time as well as its PID, so it can never reach a different
 program that inherited the PID. Processes Windows keeps from ordinary programs,
 such as services and anything running as administrator, are marked, and

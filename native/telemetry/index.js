@@ -704,6 +704,7 @@ module.exports.TelemetryEngine = nativeBinding.TelemetryEngine
 module.exports.bringProcessToFront = nativeBinding.bringProcessToFront
 module.exports.closeProcessWindows = nativeBinding.closeProcessWindows
 module.exports.collectSingleSnapshot = nativeBinding.collectSingleSnapshot
+module.exports.createDumpFile = nativeBinding.createDumpFile
 module.exports.enableDebugPrivilege = nativeBinding.enableDebugPrivilege
 module.exports.endProcess = nativeBinding.endProcess
 module.exports.getHostInfo = nativeBinding.getHostInfo

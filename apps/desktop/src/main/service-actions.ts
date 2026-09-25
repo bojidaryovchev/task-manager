@@ -36,6 +36,8 @@ export interface ServiceActionsHost {
   restartElevated?: () => void;
   /** Shared with the process actions, so only one action runs at a time. */
   gate: ActionGate;
+  /** Say what is under way, or null when it is done, for a long action. */
+  activity?: (label: string | null) => void;
 }
 
 /** As for the process menu: allow for a click landing after the close. */
@@ -143,12 +145,20 @@ export class ServiceActions {
       }
     }
 
-    const outcome: ServiceOutcome =
-      kind === 'start'
-        ? await native.startService(service.name)
-        : kind === 'stop'
-          ? await native.stopService(service.name, withDependents)
-          : await native.restartService(service.name, withDependents);
+    // Each wait can last up to 30 seconds, so say what is going on.
+    const verbing = { start: 'Starting', stop: 'Stopping', restart: 'Restarting' }[kind];
+    this.#host.activity?.(`${verbing} ${service.displayName}…`);
+    let outcome: ServiceOutcome;
+    try {
+      outcome =
+        kind === 'start'
+          ? await native.startService(service.name)
+          : kind === 'stop'
+            ? await native.stopService(service.name, withDependents)
+            : await native.restartService(service.name, withDependents);
+    } finally {
+      this.#host.activity?.(null);
+    }
     this.#host.refreshServices();
 
     if (outcome.outcome === 'done') {

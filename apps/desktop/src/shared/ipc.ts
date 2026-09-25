@@ -104,6 +104,8 @@ export const IpcChannel = {
   AppCommand: 'app:command',
   /** invoke: () => AppCommand | null - one sent before the page could hear it */
   TakePendingAppCommand: 'app:takePendingCommand',
+  /** main -> renderer push: string | null - a long action under way, or none */
+  ActivityEvent: 'app:activity',
 
   /** invoke: () => DiagnosticsInfo */
   GetDiagnostics: 'diagnostics:get',
@@ -358,6 +360,11 @@ export interface TaskManagerApi {
   onAppCommand(listener: (command: AppCommand) => void): () => void;
   /** A command sent while the page was still loading, if one was. */
   takePendingAppCommand(): Promise<AppCommand | null>;
+  /**
+   * Subscribe to what a long action - a memory dump, a service starting - is
+   * doing, and to null when it is done.
+   */
+  onActivity(listener: (label: string | null) => void): () => void;
 
   // --- diagnostics ---------------------------------------------------------
   /** Where the logs live and what has crashed recently. */

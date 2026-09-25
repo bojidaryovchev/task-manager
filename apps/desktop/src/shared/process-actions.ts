@@ -30,6 +30,8 @@ export interface ProcessState {
   canEnd: boolean;
   /** Windows would let this application change its priority, efficiency mode or affinity. */
   canAdjust: boolean;
+  /** Windows would let this application read its memory for a dump. */
+  canDump: boolean;
   /** Ending it would stop Windows. Absent when that could not be read. */
   isCritical?: boolean;
   /** Its windows on the taskbar. */
@@ -77,6 +79,17 @@ export interface ActionOutcome {
   win32Error?: number;
   /** How many things the action touched, for the actions that touch several. */
   count?: number;
+}
+
+/** What became of writing a memory dump. */
+export interface DumpOutcome {
+  outcome: 'written' | 'notRunning' | 'identityChanged' | 'accessDenied' | 'failed';
+  /** The error `MiniDumpWriteDump` (an HRESULT) or the file system gave. */
+  win32Error?: number;
+  /** The size of the file written. */
+  bytes?: number;
+  /** Whether the process's handles are in it; that needs more access. */
+  withHandles: boolean;
 }
 
 /**

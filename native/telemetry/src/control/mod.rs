@@ -25,7 +25,8 @@ use windows_sys::Win32::System::Threading::{
 const EXECUTION_SPEED: u32 = PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
 
 use crate::win::process_control::{
-    would_grant, Process, Refusal, ACCESS_ADJUST, ACCESS_END, ACCESS_QUERY,
+    would_grant, Process, Refusal, ACCESS_ADJUST, ACCESS_DUMP, ACCESS_DUMP_HANDLES, ACCESS_END,
+    ACCESS_QUERY,
 };
 use crate::win::window;
 
@@ -69,6 +70,8 @@ pub struct JsProcessState {
     /// Windows would let this application change its priority, efficiency
     /// mode or affinity.
     pub can_adjust: bool,
+    /// Windows would let this application read its memory for a dump.
+    pub can_dump: bool,
     /// Ending it would stop Windows. Absent when that could not be read.
     pub is_critical: Option<bool>,
     /// Its windows on the taskbar.
@@ -132,6 +135,7 @@ pub fn inspect_process(key: String) -> JsProcessState {
         status: status.to_string(),
         can_end: false,
         can_adjust: false,
+        can_dump: false,
         is_critical: None,
         window_count: 0,
         is_shell: false,
@@ -152,6 +156,7 @@ pub fn inspect_process(key: String) -> JsProcessState {
         status: "running".to_string(),
         can_end: would_grant(pid, ACCESS_END),
         can_adjust: would_grant(pid, ACCESS_ADJUST),
+        can_dump: would_grant(pid, ACCESS_DUMP),
         is_critical: process.is_critical(),
         window_count: window::taskbar_windows(pid).len() as u32,
         is_shell: window::shell_process_id() == Some(pid),
@@ -290,6 +295,91 @@ pub fn set_process_affinity(key: String, processors: Vec<u32>) -> JsSettingOutco
         };
     };
     adjust(&key, |process| process.set_affinity(mask))
+}
+
+/// What became of writing a memory dump.
+#[napi(object)]
+pub struct JsDumpOutcome {
+    /// `written`, `notRunning`, `identityChanged`, `accessDenied`, or
+    /// `failed` with the error.
+    #[napi(ts_type = "'written' | 'notRunning' | 'identityChanged' | 'accessDenied' | 'failed'")]
+    pub outcome: String,
+    /// The error `MiniDumpWriteDump` or the file system gave, when it failed.
+    pub win32_error: Option<u32>,
+    /// The size of the file written.
+    pub bytes: Option<f64>,
+    /// Whether the process's handles are in it. Listing them needs more
+    /// access than the memory does, and a dump without them is still useful.
+    pub with_handles: bool,
+}
+
+pub struct CreateDump {
+    key: String,
+    path: String,
+}
+
+impl Task for CreateDump {
+    type Output = JsDumpOutcome;
+    type JsValue = JsDumpOutcome;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        Ok(write_dump(&self.key, &self.path))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// Write a full memory dump of a process to `path`, which must not exist yet.
+/// The process keeps running. Runs off the JavaScript thread: a large process
+/// takes seconds and gigabytes.
+#[napi(ts_return_type = "Promise<JsDumpOutcome>")]
+pub fn create_dump_file(key: String, path: String) -> AsyncTask<CreateDump> {
+    AsyncTask::new(CreateDump { key, path })
+}
+
+fn write_dump(key: &str, path: &str) -> JsDumpOutcome {
+    let outcome = |outcome: &str, win32_error: Option<u32>| JsDumpOutcome {
+        outcome: outcome.into(),
+        win32_error,
+        bytes: None,
+        with_handles: false,
+    };
+    let Some((pid, created)) = parse_key(key) else {
+        return outcome("notRunning", None);
+    };
+    // Handles too when Windows allows it; the memory alone otherwise.
+    let (process, with_handles) = match Process::open(pid, created, ACCESS_DUMP_HANDLES) {
+        Ok(process) => (process, true),
+        Err(Refusal::AccessDenied) => match Process::open(pid, created, ACCESS_DUMP) {
+            Ok(process) => (process, false),
+            Err(refusal) => return outcome(refusal_name(refusal), None),
+        },
+        Err(refusal) => return outcome(refusal_name(refusal), None),
+    };
+    let file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) => return outcome("failed", error.raw_os_error().map(|code| code as u32)),
+    };
+    match process.write_dump(pid, &file, with_handles) {
+        Ok(()) => JsDumpOutcome {
+            outcome: "written".into(),
+            win32_error: None,
+            bytes: file.metadata().ok().map(|metadata| metadata.len() as f64),
+            with_handles,
+        },
+        Err(error) => {
+            // A partial dump is of no use to anyone and may be large.
+            drop(file);
+            let _ = std::fs::remove_file(path);
+            outcome("failed", Some(error))
+        }
+    }
 }
 
 pub struct EndProcess {
@@ -902,6 +992,44 @@ mod tests {
             .map(|entry| entry.info.create_time)
             .expect("helper listed");
         (child, format!("{pid}:{created}"))
+    }
+
+    #[test]
+    fn writes_a_memory_dump_of_a_running_process_and_leaves_it_running() {
+        let (mut child, key) = helper_with_key();
+        assert!(inspect_process(key.clone()).can_dump);
+        let path =
+            std::env::temp_dir().join(format!("task-manager-test-{}.dmp", std::process::id()));
+        let path = path.to_string_lossy().into_owned();
+        let _ = std::fs::remove_file(&path);
+
+        let written = write_dump(&key, &path);
+        assert_eq!(written.outcome, "written", "{:?}", written.win32_error);
+        // Our own child, so its handles can be listed too.
+        assert!(written.with_handles);
+        let bytes = std::fs::read(&path).expect("dump file");
+        // Every minidump starts with this signature.
+        assert_eq!(&bytes[..4], b"MDMP");
+        assert_eq!(written.bytes, Some(bytes.len() as f64));
+        // A dump never overwrites a file that is already there.
+        assert_eq!(write_dump(&key, &path).outcome, "failed");
+        // And the process was not stopped by it.
+        assert!(child.try_wait().expect("child status").is_none());
+
+        std::fs::remove_file(&path).ok();
+        child.kill().ok();
+        child.wait().ok();
+    }
+
+    #[test]
+    fn refuses_to_dump_a_process_that_has_gone() {
+        let (mut child, key) = helper_with_key();
+        child.kill().ok();
+        child.wait().ok();
+        let path = std::env::temp_dir().join("task-manager-test-gone.dmp");
+        let outcome = write_dump(&key, &path.to_string_lossy());
+        assert_eq!(outcome.outcome, "notRunning");
+        assert!(!path.exists());
     }
 
     #[test]

@@ -91,6 +91,13 @@ export declare function closeProcessWindows(key: string): JsActionOutcome
 export declare function collectSingleSnapshot(): JsSystemSnapshot
 
 /**
+ * Write a full memory dump of a process to `path`, which must not exist yet.
+ * The process keeps running. Runs off the JavaScript thread: a large process
+ * takes seconds and gigabytes.
+ */
+export declare function createDumpFile(key: string, path: string): Promise<JsDumpOutcome>
+
+/**
  * Turn on SeDebugPrivilege, which a process running as administrator holds but
  * has switched off. True when it is on afterwards.
  */
@@ -237,6 +244,24 @@ export interface JsDisksSnapshot {
   total?: JsDiskSnapshot
   /** True when the PhysicalDisk counter set could not be registered. */
   unavailable: boolean
+}
+
+/** What became of writing a memory dump. */
+export interface JsDumpOutcome {
+  /**
+   * `written`, `notRunning`, `identityChanged`, `accessDenied`, or
+   * `failed` with the error.
+   */
+  outcome: 'written' | 'notRunning' | 'identityChanged' | 'accessDenied' | 'failed'
+  /** The error `MiniDumpWriteDump` or the file system gave, when it failed. */
+  win32Error?: number
+  /** The size of the file written. */
+  bytes?: number
+  /**
+   * Whether the process's handles are in it. Listing them needs more
+   * access than the memory does, and a dump without them is still useful.
+   */
+  withHandles: boolean
 }
 
 export interface JsGetSystemTimesDelta {
@@ -542,6 +567,8 @@ export interface JsProcessState {
    * mode or affinity.
    */
   canAdjust: boolean
+  /** Windows would let this application read its memory for a dump. */
+  canDump: boolean
   /** Ending it would stop Windows. Absent when that could not be read. */
   isCritical?: boolean
   /** Its windows on the taskbar. */
