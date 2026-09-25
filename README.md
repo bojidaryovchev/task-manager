@@ -233,6 +233,14 @@ executable's version resource, then the executable path. Every group states whic
 signal formed it and expands to the raw processes underneath. Right-click an
 application to switch to it, close its windows or end all of its processes.
 
+**Services** — every Windows service with its status, process, startup type (in
+the Services console's words), account and svchost group, with its description
+and command line alongside. Right-click to start, stop or restart one; stopping
+a service that others depend on names them and asks first. Most services can
+only be started and stopped by an administrator, and the menu says so, per
+service, before offering anything. A service's PID leads to its process, and a
+process that hosts services leads to them.
+
 **GPU** — adapters from DXGI joined to the Windows GPU counter sets by LUID:
 per-adapter utilisation (the maximum across engine types, never a sum),
 per-engine-type breakdown, dedicated and shared memory, and per-process GPU

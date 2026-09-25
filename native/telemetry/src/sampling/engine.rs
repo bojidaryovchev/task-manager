@@ -23,9 +23,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::api::{
-    cpu_to_js, disks_to_js, gpu_to_js, memory_to_js, network_to_js, processes_to_js, thermal_to_js,
-    topology_to_js, CpuConversionContext, JsCollectionDiagnostics, JsCollectorConfig,
-    JsCollectorIssue, JsSystemSnapshot,
+    cpu_to_js, disks_to_js, gpu_to_js, memory_to_js, network_to_js, processes_to_js,
+    services_to_js, thermal_to_js, topology_to_js, CpuConversionContext, JsCollectionDiagnostics,
+    JsCollectorConfig, JsCollectorIssue, JsSystemSnapshot,
 };
 use crate::clock::{wall_clock_unix_ms, MonotonicClock};
 use crate::cpu::CpuCollector;
@@ -35,6 +35,7 @@ use crate::history::{HistorySample, HistoryStore};
 use crate::memory::MemoryCollector;
 use crate::network::NetworkCollector;
 use crate::process::ProcessCollector;
+use crate::services::ServiceMonitor;
 use crate::thermal::{self, ThermalCollector};
 use crate::win::pdh::{PdhCpuCounters, PdhCpuSample, PdhQuery};
 
@@ -56,6 +57,7 @@ pub struct SharedConfig {
     collect_processes: AtomicBool,
     collect_debug: AtomicBool,
     collect_command_lines: AtomicBool,
+    collect_services: AtomicBool,
 }
 
 impl SharedConfig {
@@ -65,6 +67,7 @@ impl SharedConfig {
             collect_processes: AtomicBool::new(true),
             collect_debug: AtomicBool::new(false),
             collect_command_lines: AtomicBool::new(false),
+            collect_services: AtomicBool::new(false),
         };
         this.apply(config);
         this
@@ -80,6 +83,8 @@ impl SharedConfig {
             .store(config.collect_debug, Ordering::Relaxed);
         self.collect_command_lines
             .store(config.collect_command_lines, Ordering::Relaxed);
+        self.collect_services
+            .store(config.collect_services, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> JsCollectorConfig {
@@ -88,6 +93,7 @@ impl SharedConfig {
             collect_processes: self.collect_processes.load(Ordering::Relaxed),
             collect_debug: self.collect_debug.load(Ordering::Relaxed),
             collect_command_lines: self.collect_command_lines.load(Ordering::Relaxed),
+            collect_services: self.collect_services.load(Ordering::Relaxed),
         }
     }
 
@@ -121,6 +127,10 @@ pub struct EngineState {
     pub clear_history_requested: AtomicBool,
     /// Counts completed clears, so whoever asked can tell theirs happened.
     pub history_clears: AtomicU64,
+    /// The service list, read on its own thread. Here rather than with the
+    /// collectors so that a service started or stopped from the interface can
+    /// ask for it to be read again at once.
+    pub services: ServiceMonitor,
 }
 
 impl EngineState {
@@ -135,6 +145,7 @@ impl EngineState {
             panic_message: Mutex::new(None),
             clear_history_requested: AtomicBool::new(false),
             history_clears: AtomicU64::new(0),
+            services: ServiceMonitor::new(),
         }
     }
 }
@@ -248,7 +259,14 @@ impl Collectors {
         let include_debug = state.config.collect_debug.load(Ordering::Relaxed);
         let collect_processes = state.config.collect_processes.load(Ordering::Relaxed);
         let collect_command_lines = state.config.collect_command_lines.load(Ordering::Relaxed);
+        let collect_services = state.config.collect_services.load(Ordering::Relaxed);
         let mut issues: Vec<JsCollectorIssue> = Vec::new();
+
+        // One reading of the services serves both the process list, whose
+        // svchost rows name their services, and the Services page, which
+        // alone needs every service's configuration.
+        let services_reading = (collect_processes || collect_services)
+            .then(|| state.services.latest(collect_services));
 
         // --- memory (also the source of system-wide process/thread/handle counts)
         let memory_started = Instant::now();
@@ -296,7 +314,11 @@ impl Collectors {
         // --- processes
         let process_started = Instant::now();
         let mut processes_sample = if collect_processes {
-            Some(self.processes.sample(interval_ms, collect_command_lines))
+            Some(self.processes.sample(
+                interval_ms,
+                collect_command_lines,
+                services_reading.as_deref(),
+            ))
         } else {
             None
         };
@@ -438,6 +460,10 @@ impl Collectors {
             cpu,
             memory,
             processes: processes_sample.as_ref().map(processes_to_js),
+            services: services_reading
+                .as_deref()
+                .filter(|_| collect_services)
+                .map(services_to_js),
             disks: disks_to_js(&disks_sample),
             network: network_to_js(&network_sample),
             gpu: gpu_to_js(&gpu_sample),

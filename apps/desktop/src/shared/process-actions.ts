@@ -107,6 +107,8 @@ export interface ProcessMenuRequest {
  */
 export type ProcessMenuCommand =
   | { kind: 'goToParent'; key: string }
+  /** Open the Services page on the services the process hosts, by key name. */
+  | { kind: 'goToServices'; names: string[] }
   | {
       /** Open the affinity dialog, which the page draws. */
       kind: 'affinity';

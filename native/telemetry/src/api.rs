@@ -271,6 +271,52 @@ pub struct JsHostedService {
     pub display_name: String,
 }
 
+/// Every Windows service, for the Services page. Present only while a window
+/// asks for it.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsServicesSnapshot {
+    /// Every Win32 service, running or not. Empty when the list could not be
+    /// read.
+    pub services: Vec<JsService>,
+    /// When the list was read. It is read every few seconds, not every sample.
+    pub read_at_unix_ms: f64,
+    /// The Windows error that stopped the list being read, if one did.
+    pub failure_win32_error: Option<u32>,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsService {
+    /// The key name, e.g. `Audiosrv`.
+    pub name: String,
+    /// The name people read, e.g. `Windows Audio`.
+    pub display_name: String,
+    #[napi(
+        ts_type = "'stopped' | 'startPending' | 'stopPending' | 'running' | 'continuePending' | 'pausePending' | 'paused' | 'unknown'"
+    )]
+    pub state: String,
+    /// The process it runs in. Absent when it is not running.
+    pub pid: Option<u32>,
+    /// Absent, like everything below, when the configuration could not be
+    /// read or is not read yet.
+    #[napi(ts_type = "'automatic' | 'manual' | 'disabled' | 'boot' | 'system' | 'unknown'")]
+    pub start_type: Option<String>,
+    /// Automatic, but started shortly after the other automatic services.
+    pub delayed_auto_start: Option<bool>,
+    /// Also started or stopped by an event, such as a device arriving.
+    pub trigger_start: Option<bool>,
+    /// The svchost group it shares a process with: what follows `-k` in its
+    /// command line. Absent for a service with a program of its own.
+    pub group: Option<String>,
+    /// What it runs.
+    pub binary_path: Option<String>,
+    /// The account it runs as.
+    pub account: Option<String>,
+    /// What it says it does.
+    pub description: Option<String>,
+}
+
 #[napi(object)]
 #[derive(Debug, Clone)]
 pub struct JsProcessesSnapshot {
@@ -315,6 +361,7 @@ pub struct JsSystemSnapshot {
     pub cpu: JsCpuSnapshot,
     pub memory: JsMemorySnapshot,
     pub processes: Option<JsProcessesSnapshot>,
+    pub services: Option<JsServicesSnapshot>,
     pub disks: JsDisksSnapshot,
     pub network: JsNetworkSnapshot,
     pub gpu: JsGpuSnapshot,
@@ -329,6 +376,8 @@ pub struct JsCollectorConfig {
     pub collect_processes: bool,
     pub collect_debug: bool,
     pub collect_command_lines: bool,
+    /// Every service and its configuration, for the Services page.
+    pub collect_services: bool,
 }
 
 #[napi(object)]
@@ -569,6 +618,74 @@ fn process_to_js(sample: &ProcessSample) -> JsProcessSnapshot {
                 })
                 .collect()
         }),
+    }
+}
+
+/// The service list as the Services page reads it.
+pub fn services_to_js(reading: &crate::services::Reading) -> JsServicesSnapshot {
+    JsServicesSnapshot {
+        services: reading
+            .services
+            .iter()
+            .map(|record| {
+                let entry = &record.entry;
+                let config = record.config.as_deref();
+                JsService {
+                    name: entry.name.clone(),
+                    display_name: entry.display_name.clone(),
+                    state: service_state_name(entry.state).into(),
+                    pid: (entry.pid != 0).then_some(entry.pid),
+                    start_type: config.map(|config| start_type_name(config.start_type).into()),
+                    delayed_auto_start: config.map(|config| config.delayed_auto_start),
+                    trigger_start: config.map(|config| config.trigger_start),
+                    group: config
+                        .and_then(|config| crate::services::svchost_group(&config.binary_path)),
+                    binary_path: config
+                        .map(|config| config.binary_path.clone())
+                        .filter(|path| !path.is_empty()),
+                    account: config
+                        .map(|config| config.account.clone())
+                        .filter(|account| !account.is_empty()),
+                    description: config.and_then(|config| config.description.clone()),
+                }
+            })
+            .collect(),
+        read_at_unix_ms: reading.read_at_unix_ms,
+        failure_win32_error: reading.failure,
+    }
+}
+
+/// The name of a service state (`SERVICE_STATUS.dwCurrentState`).
+pub fn service_state_name(state: u32) -> &'static str {
+    use windows_sys::Win32::System::Services::{
+        SERVICE_CONTINUE_PENDING, SERVICE_PAUSED, SERVICE_PAUSE_PENDING, SERVICE_RUNNING,
+        SERVICE_START_PENDING, SERVICE_STOPPED, SERVICE_STOP_PENDING,
+    };
+    match state {
+        SERVICE_STOPPED => "stopped",
+        SERVICE_START_PENDING => "startPending",
+        SERVICE_STOP_PENDING => "stopPending",
+        SERVICE_RUNNING => "running",
+        SERVICE_CONTINUE_PENDING => "continuePending",
+        SERVICE_PAUSE_PENDING => "pausePending",
+        SERVICE_PAUSED => "paused",
+        _ => "unknown",
+    }
+}
+
+/// The name of a start type (`QUERY_SERVICE_CONFIG.dwStartType`).
+pub fn start_type_name(start_type: u32) -> &'static str {
+    use windows_sys::Win32::System::Services::{
+        SERVICE_AUTO_START, SERVICE_BOOT_START, SERVICE_DEMAND_START, SERVICE_DISABLED,
+        SERVICE_SYSTEM_START,
+    };
+    match start_type {
+        SERVICE_AUTO_START => "automatic",
+        SERVICE_DEMAND_START => "manual",
+        SERVICE_DISABLED => "disabled",
+        SERVICE_BOOT_START => "boot",
+        SERVICE_SYSTEM_START => "system",
+        _ => "unknown",
     }
 }
 

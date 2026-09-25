@@ -174,6 +174,66 @@ export const ERROR_CODES = {
     action:
       'Check the spelling, give the full path, or use Browse to pick the program.',
   },
+  'TM-0015': {
+    subsystem: 'actions',
+    title: 'Windows refused to let Task Manager start or stop the service',
+    meaning:
+      'Windows decides per service who may start and stop it. For most services that is administrators only; for a few, the signed-in user as well. Nothing was changed.',
+    action:
+      'Restart Task Manager as administrator and try again. Some services refuse even administrators; Windows protects those.',
+  },
+  'TM-0016': {
+    subsystem: 'actions',
+    title: 'The service could not be started or stopped',
+    meaning:
+      'Windows or the service itself reported an error, given by number alongside this code. A service that starts and then stops at once usually cannot find something it needs: a file, a setting, or another service.',
+    action:
+      'Try again. If it keeps failing, the System event log usually has an entry from the Service Control Manager saying why.',
+  },
+  'TM-0017': {
+    subsystem: 'actions',
+    title: 'The service did not finish starting or stopping',
+    meaning:
+      'Windows was asked, and the service said it was starting or stopping, but 30 seconds later it had not finished. Some services take longer; a stuck one never finishes.',
+    action:
+      'Wait, and watch its status on the Services page. If it stays stuck, restarting Windows clears it.',
+  },
+  'TM-0018': {
+    subsystem: 'actions',
+    title: 'The service is disabled',
+    meaning:
+      'Its start type is Disabled, which stops anything from starting it, Task Manager included. Nothing was changed.',
+    action:
+      'Change its start type in Services (Open Services on the right-click menu), if it should be allowed to run.',
+  },
+  'TM-0019': {
+    subsystem: 'actions',
+    title: 'The service does not accept being stopped',
+    meaning:
+      'Services say which requests they accept, and this one does not accept stopping, at least not at the moment. Some never do, because Windows cannot run without them.',
+    action: 'Nothing to do from here. If it is misbehaving, restart Windows.',
+  },
+  'TM-0020': {
+    subsystem: 'actions',
+    title: 'The service no longer exists',
+    meaning:
+      'It was removed, usually by uninstalling the program it belonged to, after the list was read. Nothing was changed.',
+    action: 'None. The list catches up within a few seconds.',
+  },
+  'TM-0021': {
+    subsystem: 'actions',
+    title: 'Some services did not start again after a restart',
+    meaning:
+      'Restarting a service stops the services that depend on it first, and starts them again afterwards. The service itself restarted, but the ones named alongside this code did not come back.',
+    action: 'Start them from the Services page. If one will not start, its own report says why.',
+  },
+  'TM-0022': {
+    subsystem: 'actions',
+    title: 'Services could not be opened',
+    meaning:
+      "Windows could not open the Services console (services.msc), usually because a policy blocks the Microsoft Management Console.",
+    action: 'Try running services.msc from Run new task.',
+  },
 
   // --- 1xxx startup ---------------------------------------------------------
   'TM-1001': {
@@ -290,6 +350,13 @@ export const ERROR_CODES = {
     meaning:
       'Sampling has stopped, and every value on screen is from before it stopped. The application is deliberately saying so rather than continuing to show stale numbers as if they were current.',
     action: 'Restart the application, and report the message beside this code.',
+  },
+  'TM-2004': {
+    subsystem: 'collector',
+    title: 'The service list could not be read',
+    meaning:
+      'Windows did not return the list of services, for the reason given by number alongside this code. The Services page stays empty and svchost.exe processes are not labelled with their services. Everything else is measured as usual.',
+    action: 'It is read again every few seconds. If it keeps failing, report the Windows error number.',
   },
 
   // --- 3xxx history ---------------------------------------------------------

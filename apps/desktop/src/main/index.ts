@@ -17,8 +17,10 @@ import {
   readProcessMenuRequest,
   readProcessorIndices,
 } from '@shared/process-actions.js';
+import { readServiceMenuRequest } from '@shared/services.js';
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
+import { ActionGate } from './action-gate.js';
 import { AppSettingsController, START_HIDDEN_ARGUMENT } from './app-settings-controller.js';
 import { showColumnMenu } from './column-menu.js';
 import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
@@ -30,6 +32,7 @@ import { ProcessActions } from './process-actions.js';
 import { codeLines } from './process-menu.js';
 import { readCommand, runNewTask } from './run-task.js';
 import { Resilience, WINDOWS_RESTART_ARGUMENT } from './resilience.js';
+import { ServiceActions } from './service-actions.js';
 import { SettingsStore } from './settings-store.js';
 import { TelemetryService } from './telemetry-service.js';
 import { AppTray } from './tray.js';
@@ -54,6 +57,7 @@ let logger: Logger | null = null;
 let resilience: Resilience | null = null;
 let guard: CrashGuard | null = null;
 let processActions: ProcessActions | null = null;
+let serviceActions: ServiceActions | null = null;
 let appSettings: AppSettingsController | null = null;
 /** A command for the page, kept until the page takes it. */
 let pendingAppCommand: AppCommand | null = null;
@@ -313,6 +317,9 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
   ipcMain.handle(IpcChannel.SetProcessSubscription, (event, wanted: unknown) => {
     service.setProcessSubscription(event.sender.id, wanted === true);
   });
+  ipcMain.handle(IpcChannel.SetServiceSubscription, (event, wanted: unknown) => {
+    service.setServiceSubscription(event.sender.id, wanted === true);
+  });
   ipcMain.handle(IpcChannel.GetConfig, () => service.getConfig());
   ipcMain.handle(IpcChannel.GetAppSettings, () => appSettings?.get() ?? null);
   ipcMain.handle(IpcChannel.SetAppSettings, (_event, patch: unknown) =>
@@ -449,6 +456,14 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     if (!valid || !processActions) return;
     return processActions.endSelected(BrowserWindow.fromWebContents(event.sender), valid);
   });
+  ipcMain.handle(IpcChannel.ShowServiceMenu, (event, request: unknown) => {
+    const valid = readServiceMenuRequest(request);
+    if (!valid || !serviceActions) return null;
+    return serviceActions.showMenu(BrowserWindow.fromWebContents(event.sender), valid);
+  });
+  ipcMain.handle(IpcChannel.OpenServicesConsole, (event) =>
+    serviceActions?.openServices(BrowserWindow.fromWebContents(event.sender)),
+  );
 
   ipcMain.handle(IpcChannel.GetDiagnostics, (): DiagnosticsInfo => ({
     logDirectory: logger?.directory ?? '',
@@ -580,6 +595,17 @@ if (!app.requestSingleInstanceLock()) {
       }
     });
     telemetry = step('TM-1004', 'telemetry service', () => new TelemetryService());
+    // One action at a time, whether on a process or a service.
+    const gate = new ActionGate(() => logger);
+    serviceActions = new ServiceActions({
+      native: () => loadNative().module,
+      latestSnapshot: () => telemetry?.latestSnapshot ?? null,
+      elevated: () => telemetry?.hostInfo?.isElevated === true,
+      refreshServices: () => telemetry?.refreshServices(),
+      logger,
+      restartElevated,
+      gate,
+    });
     if (settings) {
       const store = settings;
       processActions = new ProcessActions({
@@ -590,6 +616,7 @@ if (!app.requestSingleInstanceLock()) {
         logger,
         restartElevated,
         showProcess: (key) => sendAppCommand({ kind: 'showProcess', key }),
+        gate,
       });
       appSettings = new AppSettingsController({
         settings: store,

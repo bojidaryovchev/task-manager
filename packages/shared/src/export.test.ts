@@ -193,6 +193,40 @@ describe('nothing is invented', () => {
     expect(block.reason).toContain('not collected');
   });
 
+  it('explains a service list that was not collected, or that Windows refused', () => {
+    const missing = build(['services']).blocks.find((b) => b.id === 'services');
+    if (missing?.kind !== 'unavailable') throw new Error('expected unavailable');
+    expect(missing.reason).toContain('not collected');
+    const refused = build(['services'], {
+      services: { services: [], readAtUnixMs: 1_700_000_000_000, failureWin32Error: 5 },
+    }).blocks.find((b) => b.id === 'services');
+    if (refused?.kind !== 'unavailable') throw new Error('expected unavailable');
+    expect(refused.reason).toContain('Windows error 5');
+  });
+
+  it('lists running services first, and keeps an unread start type null', () => {
+    const doc = build(
+      ['services'],
+      {
+        services: {
+          readAtUnixMs: 1_700_000_000_000,
+          services: [
+            { name: 'b', displayName: 'Beta', state: 'stopped', startType: 'manual' },
+            { name: 'a', displayName: 'Alpha', state: 'running', pid: 8 },
+            { name: 'c', displayName: 'Gamma', state: 'running', pid: 9, startType: 'automatic' },
+          ],
+        },
+      },
+      2,
+    );
+    const table = doc.blocks.find((b) => b.id === 'services');
+    if (table?.kind !== 'table') throw new Error('expected a table');
+    expect(table.rows.map((row) => row[0])).toEqual(['a', 'c']);
+    const startType = table.columns.findIndex((c) => c.key === 'startType');
+    expect(table.rows[0]![startType]).toBeNull();
+    expect(table.truncated).toEqual({ shown: 2, total: 3, orderedBy: 'running first, then display name' });
+  });
+
   it('says a disk section is missing because the counter set is absent', () => {
     const doc = build(['disk'], { disks: { disks: [], unavailable: true } });
     const block = doc.blocks.find((b) => b.id === 'disk');

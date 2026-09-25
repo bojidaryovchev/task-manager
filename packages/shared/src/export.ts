@@ -55,6 +55,7 @@ export type ExportSectionId =
   | 'memory'
   | 'processes'
   | 'applications'
+  | 'services'
   | 'disk'
   | 'network'
   | 'gpu'
@@ -204,6 +205,12 @@ export const EXPORT_SECTIONS: readonly {
     hasHistory: false,
   },
   {
+    id: 'services',
+    label: 'Services',
+    summary: 'Every Windows service: status, process, startup type, account and what it runs.',
+    hasHistory: false,
+  },
+  {
     id: 'disk',
     label: 'Disk',
     summary: 'Per physical disk throughput, active time, latency and temperature.',
@@ -241,6 +248,7 @@ export const SNAPSHOT_ONLY_REASONS: Partial<Record<ExportSectionId, string>> = {
     'The history engine stores machine-wide series only. Per-process history is not collected, so there is nothing to export over time.',
   applications:
     'Applications are grouped from the live process list, and per-process history is not collected.',
+  services: 'Service states are read live and are not written to the history database.',
   thermal:
     'Temperatures are not written to the history database, so only the current reading exists.',
   diagnostics: 'Collection costs are measured per snapshot and are not retained.',
@@ -281,6 +289,7 @@ export function buildExportDocument(
   if (wanted.has('memory')) blocks.push(memoryFacts(snapshot));
   if (wanted.has('processes')) blocks.push(processTable(snapshot, options.maxRows));
   if (wanted.has('applications')) blocks.push(applicationTable(snapshot, options.maxRows));
+  if (wanted.has('services')) blocks.push(serviceTable(snapshot, options.maxRows));
   if (wanted.has('disk')) blocks.push(diskTable(snapshot));
   if (wanted.has('network')) blocks.push(networkTable(snapshot));
   if (wanted.has('gpu')) blocks.push(gpuTable(snapshot));
@@ -627,6 +636,100 @@ function memoryFacts(snapshot: SystemSnapshot): ExportFactsBlock {
         definition: 'Page file currently in use.',
       }),
     ],
+  };
+}
+
+function serviceTable(snapshot: SystemSnapshot, maxRows: number): ExportBlock {
+  const reading = snapshot.services;
+  if (!reading || reading.services.length === 0) {
+    return {
+      kind: 'unavailable',
+      id: 'services',
+      title: 'Services',
+      reason:
+        reading?.failureWin32Error !== undefined
+          ? `Windows did not return the service list (Windows error ${reading.failureWin32Error}).`
+          : 'The service list was not collected for this snapshot. It is read only while a view that shows it is open, because reading every service’s configuration costs about 160 ms on a thread of its own.',
+    };
+  }
+  // Running first, then by name: a capped list should keep the services
+  // anyone would ask about.
+  const ordered = [...reading.services].sort(
+    (a, b) =>
+      Number(b.state === 'running') - Number(a.state === 'running') ||
+      a.displayName.localeCompare(b.displayName),
+  );
+  const shown = maxRows > 0 ? ordered.slice(0, maxRows) : ordered;
+  const columns: ExportColumn[] = [
+    col('name', 'Name', 'text', 'The service’s key name, as sc.exe and the registry know it.'),
+    col('displayName', 'Display name', 'text', 'The name Windows shows for it.'),
+    col(
+      'state',
+      'Status',
+      'text',
+      'stopped, startPending, stopPending, running, continuePending, pausePending or paused, from the Service Control Manager.',
+    ),
+    col(
+      'pid',
+      'PID',
+      'identifier',
+      'The process it runs in. Services sharing an svchost.exe process share its PID. Null when it is not running.',
+    ),
+    col(
+      'startType',
+      'Startup type',
+      'text',
+      'automatic (at startup), manual (when something asks for it) or disabled (never); boot and system apply to drivers. Null when Windows did not return the configuration.',
+    ),
+    col(
+      'delayedAutoStart',
+      'Delayed start',
+      'boolean',
+      'An automatic service Windows starts shortly after the others.',
+    ),
+    col(
+      'triggerStart',
+      'Trigger start',
+      'boolean',
+      'Also started or stopped when an event it registered for happens, such as a device arriving.',
+    ),
+    col('account', 'Log on as', 'text', 'The account it runs as.'),
+    col(
+      'group',
+      'Group',
+      'text',
+      'The svchost group it shares a process with: what follows -k in its command line. Null for a service with a program of its own.',
+    ),
+    col('binaryPath', 'Path to executable', 'text', 'What it runs, with its arguments.'),
+    col('description', 'Description', 'text', 'What the service says it does.'),
+  ];
+  return {
+    kind: 'table',
+    id: 'services',
+    title: 'Services',
+    description: `Every Win32 service, running ones first. The list was read at ${new Date(reading.readAtUnixMs).toISOString()}; it is read every few seconds, and each configuration once a minute.`,
+    columns,
+    rows: shown.map((service) => [
+      service.name,
+      service.displayName,
+      service.state,
+      service.pid ?? null,
+      service.startType ?? null,
+      service.delayedAutoStart ?? null,
+      service.triggerStart ?? null,
+      service.account ?? null,
+      service.group ?? null,
+      service.binaryPath ?? null,
+      service.description ?? null,
+    ]),
+    truncated:
+      shown.length < ordered.length
+        ? {
+            shown: shown.length,
+            total: ordered.length,
+            orderedBy: 'running first, then display name',
+          }
+        : undefined,
   };
 }
 

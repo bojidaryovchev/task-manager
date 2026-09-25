@@ -30,6 +30,8 @@ export class TelemetryService {
    * receive it, and when nobody wants it the collector stops gathering it.
    */
   #processSubscribers = new Set<number>();
+  /** Windows that asked for the service list, likewise. */
+  #serviceSubscribers = new Set<number>();
   #historyPath: string | null = null;
   #historyEnabled = false;
   /**
@@ -150,6 +152,11 @@ export class TelemetryService {
     return this.#engine.clearHistory(this.#historyPath);
   }
 
+  /** Read the service list again now, after starting or stopping a service. */
+  refreshServices(): void {
+    this.#engine?.refreshServices();
+  }
+
   queryHistory(fromUnixMs: number, toUnixMs: number): HistoryResult {
     return (
       this.#engine?.queryHistory(fromUnixMs, toUnixMs) ?? {
@@ -171,15 +178,33 @@ export class TelemetryService {
     this.#syncProcessCollection();
   }
 
+  /**
+   * Record whether a window wants the service list, and switch native service
+   * collection on or off to match demand.
+   */
+  setServiceSubscription(webContentsId: number, wanted: boolean): void {
+    if (wanted) this.#serviceSubscribers.add(webContentsId);
+    else this.#serviceSubscribers.delete(webContentsId);
+    this.#syncServiceCollection();
+  }
+
   /** Forget a window that has gone away. */
   releaseWindow(webContentsId: number): void {
     if (this.#processSubscribers.delete(webContentsId)) this.#syncProcessCollection();
+    if (this.#serviceSubscribers.delete(webContentsId)) this.#syncServiceCollection();
   }
 
   #syncProcessCollection(): void {
     const wanted = this.#processSubscribers.size > 0;
     if (this.getConfig().collectProcesses !== wanted) {
       this.setConfig({ collectProcesses: wanted });
+    }
+  }
+
+  #syncServiceCollection(): void {
+    const wanted = this.#serviceSubscribers.size > 0;
+    if (this.getConfig().collectServices !== wanted) {
+      this.setConfig({ collectServices: wanted });
     }
   }
 
@@ -234,9 +259,25 @@ export class TelemetryService {
   }
 
   #broadcast(snapshot: SystemSnapshot): void {
-    // Built lazily: most of the time no window wants processes, and when one
-    // does there is nothing to strip.
-    let withoutProcesses: SystemSnapshot | null = null;
+    // Each window gets the process and service lists only if it asked for
+    // them. Built lazily, one per combination: most of the time no window
+    // wants either, and then there is nothing to strip.
+    const payloads = new Map<string, SystemSnapshot>();
+    const payloadFor = (processes: boolean, services: boolean): SystemSnapshot => {
+      if ((processes || !snapshot.processes) && (services || !snapshot.services)) return snapshot;
+      const key = `${processes}:${services}`;
+      let payload = payloads.get(key);
+      if (!payload) {
+        const { processes: processList, services: serviceList, ...rest } = snapshot;
+        payload = {
+          ...rest,
+          ...(processes && processList ? { processes: processList } : {}),
+          ...(services && serviceList ? { services: serviceList } : {}),
+        };
+        payloads.set(key, payload);
+      }
+      return payload;
+    };
 
     // Send to every live renderer. A window that is closing may already have a
     // destroyed web contents, which would throw.
@@ -249,14 +290,10 @@ export class TelemetryService {
       // getLatestSnapshot() when it becomes visible again.
       if (!window.isVisible() || window.isMinimized()) continue;
       const id = window.webContents.id;
-      let payload = snapshot;
-      if (snapshot.processes && !this.#processSubscribers.has(id)) {
-        if (withoutProcesses === null) {
-          const { processes: _processes, ...rest } = snapshot;
-          withoutProcesses = rest;
-        }
-        payload = withoutProcesses;
-      }
+      const payload = payloadFor(
+        this.#processSubscribers.has(id),
+        this.#serviceSubscribers.has(id),
+      );
       window.webContents.send(IpcChannel.SnapshotEvent, payload);
     }
     for (const listener of this.#subscribers) {
@@ -278,5 +315,8 @@ function defaultConfig(): CollectorConfig {
     collectProcesses: false,
     collectDebug: false,
     collectCommandLines: false,
+    // Likewise: reading every service's configuration is ~160 ms of work on
+    // a thread of its own, worth doing only while the Services page is open.
+    collectServices: false,
   };
 }

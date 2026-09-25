@@ -88,6 +88,7 @@ function handlers(): ProcessMenuHandlers {
     searchOnline: vi.fn(),
     copy: vi.fn(),
     goToParent: vi.fn(),
+    goToServices: vi.fn(),
     setPriority: vi.fn(),
     setEfficiency: vi.fn(),
     affinity: vi.fn(),
@@ -170,6 +171,18 @@ describe('the process menu', () => {
     expect(labels(menu)).toContain('End Google Chrome');
   });
 
+  it('does not call a process gone just because Windows will not let it be opened', () => {
+    const refused = target(
+      { name: 'svchost.exe', services: [{ name: 'Audiosrv', displayName: 'Windows Audio' }] },
+      { status: 'accessDenied', canEnd: false, canAdjust: false, isCritical: undefined, priorityClass: undefined },
+    );
+    const menu = buildProcessMenu(model([refused]), handlers());
+    expect(labels(menu)).not.toContain('svchost.exe is no longer running');
+    expect(item(menu, 'End task (needs administrator)').enabled).not.toBe(false);
+    expect(item(menu, 'Set priority (needs administrator)').enabled).toBe(false);
+    expect(labels(menu)).toContain('Go to service');
+  });
+
   it('offers only copying for a process that has gone', () => {
     const menu = buildProcessMenu(model([target({ name: 'gone.exe' }, { status: 'notRunning' })]), handlers());
     expect(labels(menu)).toEqual(['gone.exe is no longer running', 'Copy']);
@@ -180,6 +193,25 @@ describe('the process menu', () => {
     expect(item(menu, 'Open file location').enabled).toBe(false);
     expect(item(menu, 'Properties').enabled).toBe(false);
     expect(item(menu, 'Search online').enabled).not.toBe(false);
+  });
+
+  it('goes to the services a process hosts, on the Processes page', () => {
+    const hosting = target({
+      services: [
+        { name: 'Audiosrv', displayName: 'Windows Audio' },
+        { name: 'AudioEndpointBuilder', displayName: 'Windows Audio Endpoint Builder' },
+      ],
+    });
+    expect(labels(buildProcessMenu(model([hosting]), handlers()))).toContain(
+      'Go to services (2)',
+    );
+    expect(
+      labels(buildProcessMenu(model([target({ services: [{ name: 'a', displayName: 'A' }] })]), handlers())),
+    ).toContain('Go to service');
+    expect(labels(buildProcessMenu(model([target()]), handlers()))).not.toContain('Go to service');
+    expect(
+      labels(buildProcessMenu(model([hosting], { context: 'applications' }), handlers())),
+    ).not.toContain('Go to services (2)');
   });
 
   it('goes to the parent by name, and only on the Processes page', () => {

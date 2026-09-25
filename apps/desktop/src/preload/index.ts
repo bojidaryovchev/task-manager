@@ -4,6 +4,7 @@ import { IpcChannel, type AppCommand, type TaskManagerApi } from '@shared/ipc';
 import type { AppSettingsView } from '@shared/app-settings';
 import type { MenuItemSpec } from '@shared/menu';
 import type { ProcessMenuRequest } from '@shared/process-actions';
+import type { ServiceMenuRequest } from '@shared/services';
 import type { WidgetSettings } from '@shared/widget';
 
 /**
@@ -21,6 +22,8 @@ const api: TaskManagerApi = {
   getNativeStatus: () => ipcRenderer.invoke(IpcChannel.GetNativeStatus),
   setProcessSubscription: (wanted: boolean) =>
     ipcRenderer.invoke(IpcChannel.SetProcessSubscription, wanted === true),
+  setServiceSubscription: (wanted: boolean) =>
+    ipcRenderer.invoke(IpcChannel.SetServiceSubscription, wanted === true),
   onSnapshot: (listener: (snapshot: SystemSnapshot) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, snapshot: SystemSnapshot): void => {
       listener(snapshot);
@@ -68,6 +71,9 @@ const api: TaskManagerApi = {
   showProcessMenu: (request: ProcessMenuRequest) =>
     ipcRenderer.invoke(IpcChannel.ShowProcessMenu, request),
   endProcesses: (keys: string[]) => ipcRenderer.invoke(IpcChannel.EndProcesses, keys),
+  showServiceMenu: (request: ServiceMenuRequest) =>
+    ipcRenderer.invoke(IpcChannel.ShowServiceMenu, request),
+  openServicesConsole: () => ipcRenderer.invoke(IpcChannel.OpenServicesConsole),
   restartAsAdministrator: () => ipcRenderer.invoke(IpcChannel.RestartAsAdministrator),
   setProcessAffinity: (key: string, processors: number[]) =>
     ipcRenderer.invoke(IpcChannel.SetProcessAffinity, key, processors),

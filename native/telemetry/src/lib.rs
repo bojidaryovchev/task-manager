@@ -30,6 +30,7 @@ pub mod memory;
 pub mod network;
 pub mod process;
 pub mod sampling;
+pub mod services;
 pub mod thermal;
 pub mod win;
 
@@ -268,6 +269,13 @@ impl TelemetryEngine {
         self.state.config.apply(&config);
         self.state.config.snapshot()
     }
+
+    /// Read the service list again now rather than at its next interval, for
+    /// when a service has just been started or stopped from the interface.
+    #[napi]
+    pub fn refresh_services(&self) {
+        self.state.services.refresh();
+    }
 }
 
 impl Drop for TelemetryEngine {
@@ -328,6 +336,7 @@ fn default_config() -> JsCollectorConfig {
         collect_processes: true,
         collect_debug: false,
         collect_command_lines: false,
+        collect_services: false,
     }
 }
 

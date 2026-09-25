@@ -25,6 +25,7 @@ import {
   type SortKey,
 } from './process-columns.js';
 import { useCtrlHeld, useFrozen, useHostInfo, useTelemetry } from '../lib/hooks.js';
+import { useGoTo, type ProcessTarget } from '../lib/navigation.js';
 import { ProcessDetails } from '../components/ProcessDetails.js';
 import { AffinityDialog, type AffinityRequest } from '../components/AffinityDialog.js';
 import {
@@ -57,8 +58,8 @@ export function ProcessesPage({
   onShown,
 }: {
   onRunNewTask: () => void;
-  /** A process to go to, by key, asked for from outside the page. */
-  show?: string | null;
+  /** A process to go to, asked for from outside the page. */
+  show?: ProcessTarget | null;
   /** Called once `show` has been dealt with. */
   onShown?: () => void;
 }): React.JSX.Element {
@@ -239,9 +240,16 @@ export function ProcessesPage({
   // request waits for one. A process missing from it has exited.
   useEffect(() => {
     if (!show || processes.length === 0) return;
-    if (processes.some((process) => process.key === show)) goTo(show);
+    const found = processes.find((process) =>
+      'key' in show
+        ? process.key === show.key
+        : process.pid === show.pid && process.createTimeUnixMs <= show.createdBeforeUnixMs,
+    );
+    if (found) goTo(found.key);
     onShown?.();
   }, [show, processes, goTo, onShown]);
+
+  const goToElsewhere = useGoTo();
 
   const openMenu = useCallback(
     (keys: string[]) => {
@@ -249,9 +257,10 @@ export function ProcessesPage({
       void window.taskManager.showProcessMenu({ keys, context: 'processes' }).then((command) => {
         if (command?.kind === 'goToParent') goTo(command.key);
         if (command?.kind === 'affinity') setAffinity(command);
+        if (command?.kind === 'goToServices') goToElsewhere.services(command.names);
       });
     },
-    [goTo],
+    [goTo, goToElsewhere],
   );
 
   const onRowClick = useCallback(

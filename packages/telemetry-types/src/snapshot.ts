@@ -2,6 +2,7 @@ import type { CpuSnapshot } from './cpu.js';
 import type { DisksSnapshot, GpuSnapshot, NetworkSnapshot } from './devices.js';
 import type { MemorySnapshot } from './memory.js';
 import type { ProcessesSnapshot } from './process.js';
+import type { ServicesSnapshot } from './services.js';
 import type { ThermalSnapshot } from './thermal.js';
 
 /** What the collector gathers on each tick. */
@@ -14,6 +15,8 @@ export interface CollectorConfig {
   collectDebug: boolean;
   /** Read per-process command lines. One extra query per new process. */
   collectCommandLines: boolean;
+  /** Every service and its configuration, for the Services page. */
+  collectServices: boolean;
 }
 
 /** A non-fatal problem encountered while producing a snapshot. */
@@ -59,6 +62,8 @@ export interface SystemSnapshot {
   memory: MemorySnapshot;
   /** Absent when process collection is disabled. */
   processes?: ProcessesSnapshot;
+  /** Absent unless a window asks for the service list. */
+  services?: ServicesSnapshot;
   disks: DisksSnapshot;
   network: NetworkSnapshot;
   gpu: GpuSnapshot;

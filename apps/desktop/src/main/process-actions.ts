@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { BrowserWindow, clipboard, dialog, Menu, shell } from 'electron';
+import { BrowserWindow, clipboard, Menu, shell } from 'electron';
 import type { ProcessSnapshot, SystemSnapshot } from '@task-manager/telemetry-types';
 import type {
   ActionOutcome,
@@ -8,6 +8,7 @@ import type {
   ProcessMenuRequest,
   ProcessState,
 } from '@shared/process-actions.js';
+import { ask, showReport, type ActionGate } from './action-gate.js';
 import type { Logger } from './logger.js';
 import type { NativeTelemetryModule } from './native.js';
 import {
@@ -58,6 +59,8 @@ export interface ProcessActionsHost {
   restartElevated?: () => void;
   /** Open the main window on a process's row, for the widget's menu. */
   showProcess?: (key: string) => void;
+  /** Shared with the service actions, so only one action runs at a time. */
+  gate: ActionGate;
 }
 
 /**
@@ -78,16 +81,6 @@ const UNINSPECTED: ProcessState = {
 
 export class ProcessActions {
   #host: ProcessActionsHost;
-  /**
-   * Whether an action is waiting on the user or on Windows.
-   *
-   * Only one runs at a time, and a request that arrives meanwhile is dropped
-   * rather than queued. Stacked, a second question would not even be modal:
-   * Electron only parents a message box to an enabled window, and the first
-   * question has disabled it. An unparented question floats free of the
-   * application, and an answer meant for one question could land on the other.
-   */
-  #busy = false;
   /**
    * The priority each process had before this application put it in
    * Efficiency mode, so turning the mode off can put it back. Forgotten once
@@ -120,7 +113,7 @@ export class ProcessActions {
     const chosen = request.keys
       .map((key) => byKey.get(key))
       .filter((process): process is ProcessSnapshot => process !== undefined);
-    if (!native || chosen.length === 0 || this.#busy) return Promise.resolve(null);
+    if (!native || chosen.length === 0 || this.#host.gate.busy) return Promise.resolve(null);
 
     // Inspecting costs a few handle opens and a walk of every top-level window,
     // so it is done only when the menu uses the answer: for one process, and
@@ -178,6 +171,10 @@ export class ProcessActions {
         copy: (text) => clipboard.writeText(text),
         goToParent: () => {
           if (parent) resolve({ kind: 'goToParent', key: parent.key });
+        },
+        goToServices: () => {
+          const names = (representative.services ?? []).map((service) => service.name);
+          if (names.length > 0) resolve({ kind: 'goToServices', names });
         },
         setPriority: (priority) =>
           void this.#exclusive('set priority', () =>
@@ -358,20 +355,8 @@ export class ProcessActions {
     await this.#show(window, report);
   }
 
-  async #exclusive(name: string, run: () => Promise<void>): Promise<void> {
-    if (this.#busy) {
-      this.#host.logger?.info(
-        'process',
-        `ignored "${name}": another process action is still waiting for an answer`,
-      );
-      return;
-    }
-    this.#busy = true;
-    try {
-      await run();
-    } finally {
-      this.#busy = false;
-    }
+  #exclusive(name: string, run: () => Promise<void>): Promise<void> {
+    return this.#host.gate.run(name, run);
   }
 
   async #end(
@@ -506,29 +491,15 @@ export class ProcessActions {
     void shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(query)}`);
   }
 
-  async #show(window: BrowserWindow | null, report: Report): Promise<void> {
-    const elevation = report.offerElevation && this.#host.restartElevated !== undefined;
-    const answer = await this.#ask(window, {
-      type: report.type,
-      title: 'Task Manager',
-      message: report.message,
-      detail: report.detail,
-      buttons: elevation ? ['Restart as administrator', 'OK'] : ['OK'],
-      defaultId: elevation ? 1 : 0,
-      cancelId: elevation ? 1 : 0,
-      noLink: true,
-    });
-    if (elevation && answer.response === 0) this.#host.restartElevated?.();
+  #show(window: BrowserWindow | null, report: Report): Promise<void> {
+    return showReport(window, report, this.#host.restartElevated);
   }
 
-  /** A message box, modal to the window that asked when there is one. */
   #ask(
     window: BrowserWindow | null,
     options: Electron.MessageBoxOptions,
   ): Promise<Electron.MessageBoxReturnValue> {
-    return window && !window.isDestroyed()
-      ? dialog.showMessageBox(window, options)
-      : dialog.showMessageBox(options);
+    return ask(window, options);
   }
 }
 

@@ -82,6 +82,15 @@ export function ExportPage(): React.JSX.Element {
       void window.taskManager.setProcessSubscription(false);
     };
   }, [needsProcesses]);
+  // Likewise the service list, which is not in the default selection.
+  const needsServices = sections.has('services');
+  useEffect(() => {
+    if (!needsServices) return;
+    void window.taskManager.setServiceSubscription(true);
+    return () => {
+      void window.taskManager.setServiceSubscription(false);
+    };
+  }, [needsServices]);
 
   // History is a database read, so it happens when the selection changes rather
   // than on every snapshot.

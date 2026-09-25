@@ -56,6 +56,11 @@ export declare class TelemetryEngine {
    * the effective configuration is returned.
    */
   setConfig(config: JsCollectorConfig): JsCollectorConfig
+  /**
+   * Read the service list again now rather than at its next interval, for
+   * when a service has just been started or stopped from the interface.
+   */
+  refreshServices(): void
 }
 
 /**
@@ -107,6 +112,12 @@ export declare function getHostInfo(): JsHostInfo
 /** Read what the process menu may offer for a process. */
 export declare function inspectProcess(key: string): JsProcessState
 
+/**
+ * What the service menu may offer for a service. Opens a few handles and
+ * starts or stops nothing.
+ */
+export declare function inspectService(name: string): JsServiceState
+
 /** The result of an action. */
 export interface JsActionOutcome {
   /** What happened. The possible values depend on the action. */
@@ -138,6 +149,8 @@ export interface JsCollectorConfig {
   collectProcesses: boolean
   collectDebug: boolean
   collectCommandLines: boolean
+  /** Every service and its configuration, for the Services page. */
+  collectServices: boolean
 }
 
 export interface JsCollectorIssue {
@@ -551,6 +564,103 @@ export interface JsProcessState {
   processors?: Array<number>
 }
 
+export interface JsService {
+  /** The key name, e.g. `Audiosrv`. */
+  name: string
+  /** The name people read, e.g. `Windows Audio`. */
+  displayName: string
+  state: 'stopped' | 'startPending' | 'stopPending' | 'running' | 'continuePending' | 'pausePending' | 'paused' | 'unknown'
+  /** The process it runs in. Absent when it is not running. */
+  pid?: number
+  /**
+   * Absent, like everything below, when the configuration could not be
+   * read or is not read yet.
+   */
+  startType?: 'automatic' | 'manual' | 'disabled' | 'boot' | 'system' | 'unknown'
+  /** Automatic, but started shortly after the other automatic services. */
+  delayedAutoStart?: boolean
+  /** Also started or stopped by an event, such as a device arriving. */
+  triggerStart?: boolean
+  /**
+   * The svchost group it shares a process with: what follows `-k` in its
+   * command line. Absent for a service with a program of its own.
+   */
+  group?: string
+  /** What it runs. */
+  binaryPath?: string
+  /** The account it runs as. */
+  account?: string
+  /** What it says it does. */
+  description?: string
+}
+
+/** A service by both of its names. */
+export interface JsServiceName {
+  name: string
+  displayName: string
+}
+
+/** What became of starting, stopping or restarting a service. */
+export interface JsServiceOutcome {
+  /**
+   * `done`; `accessDenied`; `notFound`; `disabled` (it cannot be started
+   * while disabled); `cannotStop` (it does not accept being stopped now);
+   * `dependentsRunning` (asked not to stop them, and some are running);
+   * `stoppedWithError` (it started, then stopped, with the error given);
+   * `timedOut` (still starting or stopping after 30 seconds); or `failed`,
+   * with the Windows error.
+   */
+  outcome: 'done' | 'accessDenied' | 'notFound' | 'disabled' | 'cannotStop' | 'dependentsRunning' | 'stoppedWithError' | 'timedOut' | 'failed'
+  win32Error?: number
+  /** The state it was left in, when it could be read. */
+  state?: string
+  /** Services stopped along with it, by display name. */
+  stoppedDependents: Array<string>
+  /**
+   * For a restart: services stopped along with it that did not start
+   * again, by display name.
+   */
+  notRestarted: Array<string>
+}
+
+/**
+ * Every Windows service, for the Services page. Present only while a window
+ * asks for it.
+ */
+export interface JsServicesSnapshot {
+  /**
+   * Every Win32 service, running or not. Empty when the list could not be
+   * read.
+   */
+  services: Array<JsService>
+  /** When the list was read. It is read every few seconds, not every sample. */
+  readAtUnixMs: number
+  /** The Windows error that stopped the list being read, if one did. */
+  failureWin32Error?: number
+}
+
+/** What the service menu needs to know before it is shown. */
+export interface JsServiceState {
+  /** Its state, or `notFound` when no service has that name any more. */
+  state: 'stopped' | 'startPending' | 'stopPending' | 'running' | 'continuePending' | 'pausePending' | 'paused' | 'unknown' | 'notFound'
+  /** The process it runs in, when it is running. */
+  pid?: number
+  /** Windows would let this application start it. */
+  canStart: boolean
+  /** Windows would let this application stop it. */
+  canStop: boolean
+  /** It accepts being stopped right now. Some services never do. */
+  acceptsStop: boolean
+  /** Its start type is Disabled, so it cannot be started. */
+  disabled: boolean
+  /**
+   * Running services that depend on it and would stop with it, in the
+   * order they would be stopped. Absent when Windows would not say: some
+   * services let only administrators list their dependents.
+   */
+  runningDependents?: Array<JsServiceName>
+}
+
 /**
  * The result of changing a setting of a process, with what Windows actually
  * applied read back afterwards, since that is not always what was asked for.
@@ -583,6 +693,7 @@ export interface JsSystemSnapshot {
   cpu: JsCpuSnapshot
   memory: JsMemorySnapshot
   processes?: JsProcessesSnapshot
+  services?: JsServicesSnapshot
   disks: JsDisksSnapshot
   network: JsNetworkSnapshot
   gpu: JsGpuSnapshot
@@ -675,6 +786,14 @@ export declare function processImagePath(pid: number): string | null
 export declare function registerForRestart(commandLine: string): boolean
 
 /**
+ * Stop a service, start it again, then start again the dependents stopped
+ * with it. Running dependents are stopped only when `with_dependents`;
+ * otherwise, with any running, nothing is stopped and the outcome is
+ * `dependentsRunning`.
+ */
+export declare function restartService(name: string, withDependents: boolean): Promise<JsServiceOutcome>
+
+/**
  * Restart the Windows shell: end the Explorer that owns the taskbar, and see
  * that a new one takes its place.
  *
@@ -723,6 +842,19 @@ export declare function setProcessPriority(key: string, priorityClass: 'idle' | 
  * at that path.
  */
 export declare function showFileProperties(path: string): boolean
+
+/**
+ * Start a service, and wait up to 30 seconds to see it running. Runs off the
+ * JavaScript thread.
+ */
+export declare function startService(name: string): Promise<JsServiceOutcome>
+
+/**
+ * Stop a service, and wait up to 30 seconds to see it stopped. Its running
+ * dependents are stopped first only when `with_dependents`; otherwise, with
+ * any running, nothing is stopped and the outcome is `dependentsRunning`.
+ */
+export declare function stopService(name: string, withDependents: boolean): Promise<JsServiceOutcome>
 
 /**
  * Cancel the restart registration, so a deliberate quit is never mistaken for

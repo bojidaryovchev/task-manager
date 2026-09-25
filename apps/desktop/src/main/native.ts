@@ -15,6 +15,7 @@ import type {
   ProcessState,
   SettingOutcome,
 } from '@shared/process-actions.js';
+import type { ServiceOutcome, ServiceState } from '@shared/services.js';
 
 /**
  * The native telemetry module, as N-API generates it.
@@ -85,6 +86,23 @@ export interface NativeTelemetryModule {
   enableDebugPrivilege(): boolean;
   /** The executable a process is running, when it can be read. */
   processImagePath(pid: number): string | null;
+
+  // --- services -------------------------------------------------------------
+  // Each names its service by key name and asks Windows for exactly the access
+  // it needs, so a refusal is about that operation alone.
+
+  /** What the service menu may offer for a service. Starts or stops nothing. */
+  inspectService(name: string): ServiceState;
+  /** Start a service, and wait up to 30 seconds to see it running. */
+  startService(name: string): Promise<ServiceOutcome>;
+  /**
+   * Stop a service, and wait up to 30 seconds to see it stopped. Running
+   * dependents are stopped first only when `withDependents`; otherwise their
+   * presence stops everything.
+   */
+  stopService(name: string, withDependents: boolean): Promise<ServiceOutcome>;
+  /** Stop and start a service, then start again the dependents stopped with it. */
+  restartService(name: string, withDependents: boolean): Promise<ServiceOutcome>;
 }
 
 /** What became of restarting Windows Explorer. */
@@ -124,6 +142,8 @@ export interface NativeEngine {
    * memory. Resolves to whether the clear was confirmed.
    */
   clearHistory(path: string): Promise<boolean>;
+  /** Read the service list again now, after starting or stopping a service. */
+  refreshServices(): void;
 }
 
 export interface NativeLoadResult {

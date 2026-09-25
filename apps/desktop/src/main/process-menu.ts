@@ -51,6 +51,7 @@ export interface ProcessMenuHandlers {
   searchOnline(): void;
   copy(text: string): void;
   goToParent(): void;
+  goToServices(): void;
   setPriority(priority: PriorityClassName): void;
   setEfficiency(enabled: boolean): void;
   affinity(): void;
@@ -80,9 +81,15 @@ export function buildProcessMenu(
   const { targets } = model;
   const single = targets.length === 1 ? targets[0]! : null;
   const reachable = targets.filter((target) => target.state.status === 'running');
+  // Refused is not gone. Windows will not let this application open some
+  // processes at all - many svchost.exe among them - and those still get
+  // their menu, with what needs more rights saying so.
+  const present = targets.filter(
+    (target) => target.state.status === 'running' || target.state.status === 'accessDenied',
+  );
 
   // A process that has gone since the page drew it can only be copied.
-  if (reachable.length === 0) {
+  if (present.length === 0) {
     return [
       {
         label: single ? `${single.process.name} is no longer running` : 'These processes are no longer running',
@@ -124,7 +131,7 @@ export function buildProcessMenu(
     });
   }
 
-  if (single && single.state.status === 'running') {
+  if (single && present.includes(single)) {
     items.push({ type: 'separator' }, ...tuningItems(single, model, handlers));
   }
 
@@ -148,12 +155,18 @@ export function buildProcessMenu(
 
   items.push({ type: 'separator' }, copyMenu(targets.map((target) => target.process), handlers));
 
-  if (single && model.parent && model.context === 'processes') {
-    items.push(
-      { type: 'separator' },
-      { label: `Go to parent (${model.parent.name})`, click: handlers.goToParent },
-    );
+  const goTo: MenuItemConstructorOptions[] = [];
+  const hosted = single?.process.services ?? [];
+  if (single && hosted.length > 0 && model.context === 'processes') {
+    goTo.push({
+      label: hosted.length === 1 ? 'Go to service' : `Go to services (${hosted.length})`,
+      click: handlers.goToServices,
+    });
   }
+  if (single && model.parent && model.context === 'processes') {
+    goTo.push({ label: `Go to parent (${model.parent.name})`, click: handlers.goToParent });
+  }
+  if (goTo.length > 0) items.push({ type: 'separator' }, ...goTo);
   return items;
 }
 

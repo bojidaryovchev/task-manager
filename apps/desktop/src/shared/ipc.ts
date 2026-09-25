@@ -9,6 +9,7 @@ import type { AppSettingsView } from './app-settings.js';
 import type { MenuItemSpec } from './menu.js';
 import type { ProcessMenuCommand, ProcessMenuRequest } from './process-actions.js';
 import type { ProcessColumnId } from './process-columns.js';
+import type { ServiceMenuCommand, ServiceMenuRequest } from './services.js';
 import type { WidgetSettings } from './widget.js';
 
 /**
@@ -29,6 +30,8 @@ export const IpcChannel = {
   GetNativeStatus: 'telemetry:getNativeStatus',
   /** invoke: (wanted: boolean) => void — this window wants the process list */
   SetProcessSubscription: 'telemetry:setProcessSubscription',
+  /** invoke: (wanted: boolean) => void — this window wants the service list */
+  SetServiceSubscription: 'telemetry:setServiceSubscription',
   /** main -> renderer push: SystemSnapshot */
   SnapshotEvent: 'telemetry:snapshot',
   /** main -> renderer push: boolean - updates were paused or resumed */
@@ -72,6 +75,10 @@ export const IpcChannel = {
   ShowProcessMenu: 'process:showMenu',
   /** invoke: (keys: string[]) => void - end the selection, asking first */
   EndProcesses: 'process:end',
+  /** invoke: (request: ServiceMenuRequest) => ServiceMenuCommand */
+  ShowServiceMenu: 'service:showMenu',
+  /** invoke: () => void - open the Windows Services console */
+  OpenServicesConsole: 'service:openConsole',
   /** invoke: () => void - restart as administrator, through the Windows prompt */
   RestartAsAdministrator: 'app:restartAsAdministrator',
   /** invoke: (key, processors: number[]) => void - from the affinity dialog */
@@ -214,6 +221,11 @@ export interface TaskManagerApi {
    * collector stops gathering it at all.
    */
   setProcessSubscription(wanted: boolean): Promise<void>;
+  /**
+   * Declare whether this window needs the service list in its snapshots. While
+   * no window does, every service's configuration goes unread.
+   */
+  setServiceSubscription(wanted: boolean): Promise<void>;
   /** Subscribe to the canonical snapshot stream. Returns an unsubscribe function. */
   onSnapshot(listener: (snapshot: SystemSnapshot) => void): () => void;
   /** Subscribe to updates being paused and resumed. */
@@ -285,6 +297,14 @@ export interface TaskManagerApi {
    * asks first, then reports anything that could not be ended.
    */
   endProcesses(keys: string[]): Promise<void>;
+  /**
+   * Show the menu for a service, at the pointer. Resolves once it has closed,
+   * with anything the page has to do itself - going to the service's
+   * process - or null.
+   */
+  showServiceMenu(request: ServiceMenuRequest): Promise<ServiceMenuCommand>;
+  /** Open the Windows Services console, saying so if it could not be opened. */
+  openServicesConsole(): Promise<void>;
   /**
    * Restart the application as administrator. Windows asks the user first;
    * declining leaves everything as it was.

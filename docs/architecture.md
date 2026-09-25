@@ -419,6 +419,9 @@ process tracks subscribers per window and:
 - strips `processes` from the snapshot sent to windows that did not ask;
 - turns native process collection off entirely when nobody is asking.
 
+The service list works the same way, through `setServiceSubscription`: only the
+Services page, and Export with its Services section ticked, ask for it.
+
 Measured effect: 1.8 ms per sample with no subscriber, versus 37 ms with one.
 System-wide process, thread and handle *counts* remain available either way,
 because they come from `GetPerformanceInfo` when the list is off and from our own
@@ -577,7 +580,14 @@ the services it runs, and its details list them. The list comes from
 at 34 ms median, too long for the sampling thread, so a worker thread reads it
 every five seconds while the process list is being collected, and the collector
 takes the latest reading. A process is credited with services only if it was
-created before the list was read, so a recycled PID cannot inherit them.
+created before the list was read, so a recycled PID cannot inherit them. The
+same reading feeds the Services page (below), so the two can never disagree
+about which process a service is in.
+
+A process Windows will not let this application open at all - many
+`svchost.exe` among them - still gets its full menu, with what needs more
+rights marked "(needs administrator)". It used to be treated as gone and
+offered only Copy.
 
 ### From the widget
 
@@ -595,6 +605,51 @@ As in Windows Task Manager, holding Ctrl freezes the Processes and Applications
 lists, values and order, so a row can be clicked, or Ctrl-clicked into a
 selection, without sorting away under the pointer. The hold ends when the key
 is released or the window loses focus.
+
+## Services
+
+The Services page lists every Win32 service with its status, process, startup
+type, account and svchost group, and starts, stops and restarts them.
+
+**One reading, off the sampling thread.** `ServiceMonitor` (`native/telemetry/
+src/services`) reads the list on its own thread, every five seconds while
+anything wants it: the process list, for its `svchost.exe` labels, or the
+Services page. Only the page wants every service's configuration as well -
+start type, account, command line, description - which costs about 160 ms for
+342 services on the development machine (27 ms for the list alone), so each is
+kept for a minute before it is read again. A change made in `services.msc`
+shows within that; a service this application starts or stops shows at once,
+because it asks for a fresh reading when it is done. Measured with the page
+open, the sampler's own cost did not move (median 6.1 ms against 7.1 ms
+without).
+
+**What Windows allows.** Reading needs no administrator rights: 339 of 342
+configurations were readable unelevated (the other three returned Windows
+errors, and the page says so rather than showing blanks). Starting and stopping
+are decided per service. Unelevated, this account could start or stop 23 of the
+342: its own per-user service instances and some third-party services. The menu
+asks Windows before it is shown, with a handle opened for exactly that access,
+and anything refused says "(needs administrator)" and offers the restart as
+administrator when chosen, without a question in front of it.
+
+**Stopping follows Microsoft's samples.** A pending state is waited out before
+acting, and each wait gives up after 30 seconds and says so. Running dependents
+are stopped first, in the order `EnumDependentServicesW` returns them, but only
+after asking, with every one of them named; Cancel is the default. Windows
+lists indirect dependents too, each before the service it depends on: `nsi`'s
+list includes `upnphost`, which depends on it only through `SSDPSRV`, and lists
+it first. Restart stops the service, starts it, and starts the dependents it
+took down again in their start order, naming any that did not come back
+(TM-0021).
+
+**Not exercised live.** Starting, stopping and restarting real services was not
+tried on the development machine, which would have changed it: the refusal
+path was, end to end with the menu and the question recorded rather than shown,
+and the Windows calls follow the documented samples.
+
+**Going between the two pages.** A service's PID goes to its process on the
+Processes page, trusting the PID only for a process created before the service
+list was read; a process that hosts services goes to them on the Services page.
 
 ## Renderer performance
 

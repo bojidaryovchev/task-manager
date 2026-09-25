@@ -29,6 +29,8 @@ use crate::win::process_control::{
 };
 use crate::win::window;
 
+pub mod services;
+
 /// How long ending a process waits to see it actually go.
 ///
 /// Ending is asynchronous. Almost every process is gone within milliseconds;

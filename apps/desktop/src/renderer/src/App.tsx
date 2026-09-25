@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppCommand } from '@shared/ipc';
 import { telemetryStore } from './lib/telemetry-store.js';
 import { useNativeStatus } from './lib/hooks.js';
@@ -17,14 +17,36 @@ import { HistoryPage } from './pages/History.js';
 import { RunTaskDialog } from './components/RunTaskDialog.js';
 import { PausedBanner } from './components/PausedBanner.js';
 import { SettingsPage } from './pages/Settings.js';
-import { NavigationContext } from './lib/navigation.js';
+import { ServicesPage } from './pages/Services.js';
+import {
+  GoToContext,
+  NavigationContext,
+  type GoTo,
+  type ProcessTarget,
+} from './lib/navigation.js';
 
 export function App(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('overview');
   const [runTask, setRunTask] = useState(false);
-  // A process to select on the Processes page, until the page has taken it.
-  const [showProcess, setShowProcess] = useState<string | null>(null);
+  // A row to select on the Processes or Services page, until the page has
+  // taken it.
+  const [showProcess, setShowProcess] = useState<ProcessTarget | null>(null);
   const onProcessShown = useCallback(() => setShowProcess(null), []);
+  const [showServices, setShowServices] = useState<string[] | null>(null);
+  const onServicesShown = useCallback(() => setShowServices(null), []);
+  const goTo = useMemo<GoTo>(
+    () => ({
+      process: (target) => {
+        setPage('processes');
+        setShowProcess(target);
+      },
+      services: (names) => {
+        setPage('services');
+        setShowServices(names);
+      },
+    }),
+    [],
+  );
   const status = useNativeStatus();
 
   // Commands from elsewhere, such as the tray's Run new task. One sent before
@@ -32,10 +54,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const handle = (command: AppCommand | null): void => {
       if (command?.kind === 'runNewTask') setRunTask(true);
-      if (command?.kind === 'showProcess') {
-        setPage('processes');
-        setShowProcess(command.key);
-      }
+      if (command?.kind === 'showProcess') goTo.process({ key: command.key });
     };
     const stop = window.taskManager.onAppCommand((command) => {
       handle(command);
@@ -43,7 +62,7 @@ export function App(): React.JSX.Element {
     });
     void window.taskManager.takePendingAppCommand().then(handle);
     return stop;
-  }, []);
+  }, [goTo]);
 
   useEffect(() => {
     const api = window.taskManager;
@@ -93,33 +112,38 @@ export function App(): React.JSX.Element {
 
   return (
     <NavigationContext.Provider value={setPage}>
-      <div className="flex h-full w-full bg-surface-0">
-        <Sidebar current={page} onNavigate={setPage} />
-        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <StartupBanner />
-          <PausedBanner />
-          {page === 'overview' && <OverviewPage />}
-          {page === 'cpu' && <CpuPage />}
-          {page === 'memory' && <MemoryPage />}
-          {page === 'processes' && (
-            <ProcessesPage
-              onRunNewTask={() => setRunTask(true)}
-              show={showProcess}
-              onShown={onProcessShown}
-            />
-          )}
-          {page === 'applications' && <ApplicationsPage />}
-          {page === 'gpu' && <GpuPage />}
-          {page === 'disk' && <DiskPage />}
-          {page === 'network' && <NetworkPage />}
-          {page === 'history' && <HistoryPage />}
-          {page === 'widget' && <WidgetSettingsPage />}
-          {page === 'export' && <ExportPage />}
-          {page === 'settings' && <SettingsPage />}
-          {page === 'debug' && <DebugPage />}
-        </main>
-        {runTask && <RunTaskDialog onClose={() => setRunTask(false)} />}
-      </div>
+      <GoToContext.Provider value={goTo}>
+        <div className="flex h-full w-full bg-surface-0">
+          <Sidebar current={page} onNavigate={setPage} />
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <StartupBanner />
+            <PausedBanner />
+            {page === 'overview' && <OverviewPage />}
+            {page === 'cpu' && <CpuPage />}
+            {page === 'memory' && <MemoryPage />}
+            {page === 'processes' && (
+              <ProcessesPage
+                onRunNewTask={() => setRunTask(true)}
+                show={showProcess}
+                onShown={onProcessShown}
+              />
+            )}
+            {page === 'applications' && <ApplicationsPage />}
+            {page === 'services' && (
+              <ServicesPage show={showServices} onShown={onServicesShown} />
+            )}
+            {page === 'gpu' && <GpuPage />}
+            {page === 'disk' && <DiskPage />}
+            {page === 'network' && <NetworkPage />}
+            {page === 'history' && <HistoryPage />}
+            {page === 'widget' && <WidgetSettingsPage />}
+            {page === 'export' && <ExportPage />}
+            {page === 'settings' && <SettingsPage />}
+            {page === 'debug' && <DebugPage />}
+          </main>
+          {runTask && <RunTaskDialog onClose={() => setRunTask(false)} />}
+        </div>
+      </GoToContext.Provider>
     </NavigationContext.Provider>
   );
 }

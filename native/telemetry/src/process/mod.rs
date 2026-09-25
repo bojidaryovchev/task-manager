@@ -23,7 +23,6 @@
 
 mod details;
 mod metadata;
-mod services;
 
 use std::collections::HashMap;
 
@@ -31,9 +30,9 @@ use crate::clock::filetime_100ns_to_unix_ms;
 use crate::cpu::calc;
 use crate::win::ntdll::{self, ProcessListIter};
 
+pub use crate::services::HostedService;
 pub use details::ProcessDetails;
 pub use metadata::{ImageMetadata, PackageIdentity};
-pub use services::HostedService;
 
 /// Stable identity for a process across samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -146,8 +145,6 @@ pub struct ProcessCollector {
     buffer: Vec<u8>,
     /// Reused set of live identities, to avoid allocating one per sample.
     live_keys: std::collections::HashSet<ProcessKey>,
-    /// Which services each process hosts, re-read every few seconds.
-    services: services::ServiceIndex,
 }
 
 impl ProcessCollector {
@@ -159,7 +156,6 @@ impl ProcessCollector {
             logical_processor_count: logical_processor_count.max(1),
             buffer: Vec::new(),
             live_keys: std::collections::HashSet::with_capacity(512),
-            services: services::ServiceIndex::new(),
         }
     }
 
@@ -169,10 +165,13 @@ impl ProcessCollector {
 
     /// Collect every process. `interval_ms` is the measured monotonic interval
     /// since the previous collection; pass `None` on the first sample.
+    /// `services` names the services each process hosts, when there is a
+    /// reading of them.
     pub fn sample(
         &mut self,
         interval_ms: Option<f64>,
         collect_command_lines: bool,
+        services: Option<&crate::services::Reading>,
     ) -> ProcessesSample {
         let started = std::time::Instant::now();
         self.sequence += 1;
@@ -267,7 +266,6 @@ impl ProcessCollector {
         }
 
         let total_count = raw.len();
-        let services = self.services.latest();
         let mut access_denied_count = 0usize;
 
         for sample in raw.iter_mut() {
@@ -335,7 +333,9 @@ impl ProcessCollector {
                 },
             );
 
-            if let Some(hosted) = services.hosted_by(sample.pid, sample.create_time_100ns) {
+            if let Some(hosted) =
+                services.and_then(|reading| reading.hosted_by(sample.pid, sample.create_time_100ns))
+            {
                 sample.services = hosted.to_vec();
             }
 
