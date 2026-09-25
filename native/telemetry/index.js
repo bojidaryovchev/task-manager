@@ -701,8 +701,12 @@ if (!nativeBinding) {
 
 module.exports = nativeBinding
 module.exports.TelemetryEngine = nativeBinding.TelemetryEngine
+module.exports.bringProcessToFront = nativeBinding.bringProcessToFront
+module.exports.closeProcessWindows = nativeBinding.closeProcessWindows
 module.exports.collectSingleSnapshot = nativeBinding.collectSingleSnapshot
+module.exports.endProcess = nativeBinding.endProcess
 module.exports.getHostInfo = nativeBinding.getHostInfo
+module.exports.inspectProcess = nativeBinding.inspectProcess
 module.exports.nativeProbe = nativeBinding.nativeProbe
 module.exports.registerForRestart = nativeBinding.registerForRestart
 module.exports.unregisterForRestart = nativeBinding.unregisterForRestart

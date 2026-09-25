@@ -1,4 +1,11 @@
-import { useCallback, useDebugValue, useRef, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useDebugValue,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { SystemSnapshot } from '@task-manager/telemetry-types';
 import { telemetryStore } from './telemetry-store.js';
 
@@ -92,4 +99,42 @@ export function useCollectorConfig() {
     () => telemetryStore.config,
     () => telemetryStore.config,
   );
+}
+
+/**
+ * Whether Ctrl is held down in this window.
+ *
+ * Windows Task Manager freezes its list while Ctrl is held, so a row can be
+ * clicked without it moving away under the pointer, and Ctrl-click selects
+ * what was aimed at rather than whatever sorted into that spot a moment later.
+ * The process pages do the same with this.
+ *
+ * Released when the window loses focus: the key-up that ends a hold can happen
+ * in another window, and would then never arrive here.
+ */
+export function useCtrlHeld(): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const update = (event: KeyboardEvent): void => setHeld(event.ctrlKey);
+    const release = (): void => setHeld(false);
+    window.addEventListener('keydown', update);
+    window.addEventListener('keyup', update);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', update);
+      window.removeEventListener('keyup', update);
+      window.removeEventListener('blur', release);
+    };
+  }, []);
+  return held;
+}
+
+/**
+ * `live`, except while `frozen` is true, when it keeps returning the value it
+ * had the moment the freeze began.
+ */
+export function useFrozen<T>(live: T, frozen: boolean): T {
+  const kept = useRef(live);
+  if (!frozen) kept.current = live;
+  return frozen ? kept.current : live;
 }

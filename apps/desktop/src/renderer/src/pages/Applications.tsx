@@ -9,7 +9,7 @@ import {
   type ApplicationGroupBasis,
 } from '@task-manager/shared';
 import { Note, PageShell } from '../components/primitives.js';
-import { useTelemetry } from '../lib/hooks.js';
+import { useCtrlHeld, useFrozen, useTelemetry } from '../lib/hooks.js';
 import { ProcessDetails } from '../components/ProcessDetails.js';
 
 const EMPTY: ProcessSnapshot[] = [];
@@ -49,7 +49,12 @@ export function ApplicationsPage(): React.JSX.Element {
     };
   }, []);
 
-  const processes = useTelemetry((snapshot) => snapshot?.processes?.processes ?? EMPTY);
+  // Holding Ctrl freezes the list, values and order, as in Windows Task Manager.
+  const ctrlHeld = useCtrlHeld();
+  const processes = useFrozen(
+    useTelemetry((snapshot) => snapshot?.processes?.processes ?? EMPTY),
+    ctrlHeld,
+  );
   const logical = useTelemetry((s) => s?.cpu.topology.logicalProcessorCount ?? 1);
 
   const groups = useMemo(() => {
@@ -87,6 +92,23 @@ export function ApplicationsPage(): React.JSX.Element {
 
   const grouped = groups.reduce((total, group) => total + group.processes.length, 0);
 
+  // Everything that acts on a process happens behind this menu, in the main
+  // process; the page only says which processes it is for.
+  const onGroupMenu = useCallback((group: ApplicationGroup, event: React.MouseEvent) => {
+    event.preventDefault();
+    void window.taskManager.showProcessMenu({
+      keys: group.processes.map((process) => process.key),
+      context: 'applications',
+      applicationName: group.name,
+    });
+  }, []);
+
+  const onProcessMenu = useCallback((process: ProcessSnapshot, event: React.MouseEvent) => {
+    event.preventDefault();
+    setSelected(process);
+    void window.taskManager.showProcessMenu({ keys: [process.key], context: 'applications' });
+  }, []);
+
   return (
     <PageShell
       title="Applications"
@@ -94,6 +116,7 @@ export function ApplicationsPage(): React.JSX.Element {
         <span>
           {formatCount(groups.length)} applications from {formatCount(grouped)} processes ·
           grouped only from signals Windows provides
+          {ctrlHeld && <span className="text-text-primary"> · paused while Ctrl is held</span>}
         </span>
       }
     >
@@ -157,6 +180,8 @@ export function ApplicationsPage(): React.JSX.Element {
                 expanded={expanded.has(group.key)}
                 onToggle={onToggle}
                 onSelect={setSelected}
+                onGroupMenu={onGroupMenu}
+                onProcessMenu={onProcessMenu}
                 selectedKey={selected?.key ?? null}
               />
             ))}
@@ -215,12 +240,16 @@ const GroupRows = memo(function GroupRows({
   expanded,
   onToggle,
   onSelect,
+  onGroupMenu,
+  onProcessMenu,
   selectedKey,
 }: {
   group: ApplicationGroup;
   expanded: boolean;
   onToggle: (key: string) => void;
   onSelect: (process: ProcessSnapshot) => void;
+  onGroupMenu: (group: ApplicationGroup, event: React.MouseEvent) => void;
+  onProcessMenu: (process: ProcessSnapshot, event: React.MouseEvent) => void;
   selectedKey: string | null;
 }) {
   const { totals } = group;
@@ -228,7 +257,8 @@ const GroupRows = memo(function GroupRows({
     <>
       <div
         onClick={() => onToggle(group.key)}
-        className="flex h-7 cursor-default items-center border-b border-border-subtle/40 text-[12px] hover:bg-surface-2"
+        onContextMenu={(event) => onGroupMenu(group, event)}
+        className="flex h-7 cursor-default select-none items-center border-b border-border-subtle/40 text-[12px] hover:bg-surface-2"
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2">
           <span className="w-3 shrink-0 text-[9px] text-text-muted">
@@ -262,7 +292,8 @@ const GroupRows = memo(function GroupRows({
           <div
             key={process.key}
             onClick={() => onSelect(process)}
-            className={`flex h-6 cursor-default items-center text-[12px] ${
+            onContextMenu={(event) => onProcessMenu(process, event)}
+            className={`flex h-6 cursor-default select-none items-center text-[12px] ${
               process.key === selectedKey ? 'bg-accent-dim/25' : 'hover:bg-surface-2'
             }`}
           >

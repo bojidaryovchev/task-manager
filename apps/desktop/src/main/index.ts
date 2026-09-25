@@ -4,12 +4,14 @@ import { release } from 'node:os';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { CollectorConfig } from '@task-manager/telemetry-types';
 import { IpcChannel, type DiagnosticsInfo, type StartupFailure } from '@shared/ipc';
+import { readProcessKeys, readProcessMenuRequest } from '@shared/process-actions.js';
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
 import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
 import { ExportService } from './export-service.js';
 import { Logger } from './logger.js';
 import { loadNative } from './native.js';
+import { ProcessActions } from './process-actions.js';
 import { Resilience, WINDOWS_RESTART_ARGUMENT } from './resilience.js';
 import { SettingsStore } from './settings-store.js';
 import { TelemetryService } from './telemetry-service.js';
@@ -34,6 +36,7 @@ let mainWindow: BrowserWindow | null = null;
 let logger: Logger | null = null;
 let resilience: Resilience | null = null;
 let guard: CrashGuard | null = null;
+let processActions: ProcessActions | null = null;
 /** Whether Windows accepted the restart registration, for the diagnostics view. */
 let restartRegistered = false;
 /** Startup steps that failed, with why, so the interface can show them. */
@@ -246,6 +249,19 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
   );
   ipcMain.handle(IpcChannel.CopyToClipboard, (_event, text: unknown) => exports.copy(text));
 
+  // Validated here, at the boundary: a malformed request is dropped whole
+  // rather than acted on in part.
+  ipcMain.handle(IpcChannel.ShowProcessMenu, (event, request: unknown) => {
+    const valid = readProcessMenuRequest(request);
+    if (!valid || !processActions) return null;
+    return processActions.showMenu(BrowserWindow.fromWebContents(event.sender), valid);
+  });
+  ipcMain.handle(IpcChannel.EndProcesses, (event, keys: unknown) => {
+    const valid = readProcessKeys(keys);
+    if (!valid || !processActions) return;
+    return processActions.endSelected(BrowserWindow.fromWebContents(event.sender), valid);
+  });
+
   ipcMain.handle(IpcChannel.GetDiagnostics, (): DiagnosticsInfo => ({
     logDirectory: logger?.directory ?? '',
     logFiles: logger?.listFiles() ?? [],
@@ -356,6 +372,16 @@ if (!app.requestSingleInstanceLock()) {
       });
     }
     telemetry = step('TM-1004', 'telemetry service', () => new TelemetryService());
+    if (settings) {
+      const store = settings;
+      processActions = new ProcessActions({
+        native: () => loadNative().module,
+        latestSnapshot: () => telemetry?.latestSnapshot ?? null,
+        elevated: () => telemetry?.hostInfo?.isElevated === true,
+        settings: store,
+        logger,
+      });
+    }
 
     if (settings) {
       widget = step('TM-1005', 'widget controller', () => new WidgetController({

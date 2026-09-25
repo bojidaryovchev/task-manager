@@ -22,6 +22,7 @@ describe('the error code registry', () => {
   it('uses the numeric block that matches the subsystem', () => {
     // The first digit places a code without looking it up.
     const block: Record<string, string> = {
+      actions: '0',
       startup: '1',
       collector: '2',
       history: '3',
@@ -68,6 +69,7 @@ describe('the error code registry', () => {
   it('covers every subsystem that can fail', () => {
     const covered = new Set(ERROR_CODE_LIST.map((d) => d.subsystem));
     for (const subsystem of [
+      'actions',
       'startup',
       'collector',
       'history',

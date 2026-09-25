@@ -19,8 +19,16 @@ import {
   type ProcessTreeNode,
 } from '@task-manager/shared';
 import { PageShell } from '../components/primitives.js';
-import { useTelemetry } from '../lib/hooks.js';
+import { useCtrlHeld, useFrozen, useTelemetry } from '../lib/hooks.js';
 import { ProcessDetails } from '../components/ProcessDetails.js';
+import {
+  clickSelection,
+  contextSelection,
+  EMPTY_SELECTION,
+  moveSelection,
+  visibleSelection,
+  type Selection,
+} from '../lib/selection.js';
 
 type SortKey =
   | 'name'
@@ -134,8 +142,11 @@ export function ProcessesPage(): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [cpuMode, setCpuMode] = useState<CpuMode>('machine');
   const [viewMode, setViewMode] = useState<ViewMode>('flat');
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
+  // A request to scroll a row into view. The nonce makes asking twice for the
+  // same row scroll twice, which a bare key could not.
+  const [reveal, setReveal] = useState<{ key: string; nonce: number } | null>(null);
 
   // Typing must not block the 500 ms snapshot pipeline on a 1000-row re-filter.
   const deferredQuery = useDeferredValue(query);
@@ -149,9 +160,14 @@ export function ProcessesPage(): React.JSX.Element {
     };
   }, []);
 
-  const processes = useTelemetry((snapshot) => snapshot?.processes?.processes ?? EMPTY);
+  // Holding Ctrl freezes the list, values and order, as in Windows Task Manager.
+  const ctrlHeld = useCtrlHeld();
+  const processes = useFrozen(
+    useTelemetry((snapshot) => snapshot?.processes?.processes ?? EMPTY),
+    ctrlHeld,
+  );
 
-  const summary = useTelemetry(
+  const liveSummary = useTelemetry(
     (snapshot) => ({
       total: snapshot?.processes?.totalCount ?? 0,
       denied: snapshot?.processes?.accessDeniedCount ?? 0,
@@ -160,6 +176,7 @@ export function ProcessesPage(): React.JSX.Element {
     }),
     (a, b) => a.total === b.total && a.denied === b.denied,
   );
+  const summary = useFrozen(liveSummary, ctrlHeld);
 
   const filtered = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
@@ -217,9 +234,156 @@ export function ProcessesPage(): React.JSX.Element {
     });
   }, []);
 
-  const selected = selectedKey
-    ? (rows.find((r) => r.process.key === selectedKey)?.process ?? null)
-    : null;
+  // Gestures read the order and the selection as they are at the moment of the
+  // gesture. Refs, so the row callbacks keep one identity and memoised rows do
+  // not re-render just because the list moved.
+  const order = useMemo(() => rows.map((row) => row.process.key), [rows]);
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+
+  // Only rows still on screen count: acting on a selected process the filter
+  // hides, or one that has exited, would not be acting on what is highlighted.
+  const chosen = useMemo(() => visibleSelection(order, selection), [order, selection]);
+  const detailed =
+    chosen.length === 1 ? (rows.find((row) => row.process.key === chosen[0])?.process ?? null) : null;
+
+  const select = useCallback((next: Selection, scrollTo?: string | null) => {
+    setSelection(next);
+    if (scrollTo) setReveal({ key: scrollTo, nonce: Date.now() });
+  }, []);
+
+  const goTo = useCallback(
+    (key: string) => {
+      const byKey = new Map(processes.map((process) => [process.key, process]));
+      // In tree mode the row only exists once every ancestor is expanded.
+      setCollapsed((current) => {
+        const next = new Set(current);
+        let cursor = byKey.get(key)?.parentKey;
+        for (let guard = 0; cursor && guard < byKey.size; guard += 1) {
+          next.delete(cursor);
+          cursor = byKey.get(cursor)?.parentKey;
+        }
+        return next;
+      });
+      // A filter hiding the row would make going there look like it failed.
+      if (!filtered.some((process) => process.key === key)) setQuery('');
+      select({ keys: new Set([key]), focus: key, anchor: key }, key);
+    },
+    [processes, filtered, select],
+  );
+
+  const openMenu = useCallback(
+    (keys: string[]) => {
+      if (keys.length === 0) return;
+      void window.taskManager.showProcessMenu({ keys, context: 'processes' }).then((command) => {
+        if (command?.kind === 'goToParent') goTo(command.key);
+      });
+    },
+    [goTo],
+  );
+
+  const onRowClick = useCallback(
+    (key: string, event: React.MouseEvent) => {
+      select(
+        clickSelection(orderRef.current, selectionRef.current, key, {
+          toggle: event.ctrlKey || event.metaKey,
+          range: event.shiftKey,
+        }),
+      );
+    },
+    [select],
+  );
+
+  const onRowContextMenu = useCallback(
+    (key: string, event: React.MouseEvent) => {
+      event.preventDefault();
+      const next = contextSelection(selectionRef.current, key);
+      select(next);
+      openMenu(visibleSelection(orderRef.current, next));
+    },
+    [select, openMenu],
+  );
+
+  const endChosen = useCallback(() => {
+    const keys = visibleSelection(orderRef.current, selectionRef.current);
+    if (keys.length > 0) void window.taskManager.endProcesses(keys);
+  }, []);
+
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      const current = selectionRef.current;
+      const move = (to: number | 'first' | 'last'): void => {
+        const next = moveSelection(orderRef.current, current, to, event.shiftKey);
+        select(next, next.focus);
+      };
+      const page = Math.max(1, Math.floor(event.currentTarget.clientHeight / ROW_HEIGHT) - 1);
+      switch (event.key) {
+        case 'ArrowDown':
+          move(1);
+          break;
+        case 'ArrowUp':
+          move(-1);
+          break;
+        case 'PageDown':
+          move(page);
+          break;
+        case 'PageUp':
+          move(-page);
+          break;
+        case 'Home':
+          move('first');
+          break;
+        case 'End':
+          move('last');
+          break;
+        case 'ArrowRight':
+        case 'ArrowLeft': {
+          // In the tree, right opens a branch and left folds it.
+          if (viewMode !== 'tree' || !current.focus) return;
+          const expand = event.key === 'ArrowRight';
+          const key = current.focus;
+          setCollapsed((collapsedNow) => {
+            if (collapsedNow.has(key) !== expand) return collapsedNow;
+            const next = new Set(collapsedNow);
+            if (expand) next.delete(key);
+            else next.add(key);
+            return next;
+          });
+          break;
+        }
+        case 'Delete':
+          endChosen();
+          break;
+        case 'Escape':
+          select(EMPTY_SELECTION);
+          break;
+        case 'ContextMenu':
+          openMenu(visibleSelection(orderRef.current, current));
+          break;
+        case 'F10':
+          if (!event.shiftKey) return;
+          openMenu(visibleSelection(orderRef.current, current));
+          break;
+        case 'c':
+        case 'C': {
+          if (!(event.ctrlKey || event.metaKey)) return;
+          const keys = new Set(visibleSelection(orderRef.current, current));
+          const lines = processes
+            .filter((process) => keys.has(process.key))
+            .map((process) => `${process.name}\t${process.pid}`);
+          if (lines.length === 0) return;
+          void window.taskManager.copyToClipboard(lines.join('\n'));
+          break;
+        }
+        default:
+          return;
+      }
+      event.preventDefault();
+    },
+    [viewMode, processes, select, openMenu, endChosen],
+  );
 
   return (
     <PageShell
@@ -228,6 +392,7 @@ export function ProcessesPage(): React.JSX.Element {
         <span>
           {formatCount(summary.total)} processes · {formatCount(summary.denied)} without detail
           access · collected in {summary.durationMs.toFixed(1)} ms
+          {ctrlHeld && <span className="text-text-primary"> · paused while Ctrl is held</span>}
         </span>
       }
       actions={
@@ -263,6 +428,15 @@ export function ProcessesPage(): React.JSX.Element {
             spellCheck={false}
             className="w-72 rounded border border-border-subtle bg-surface-2 px-2 py-1 text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-accent-dim"
           />
+          <button
+            type="button"
+            onClick={endChosen}
+            disabled={chosen.length === 0}
+            title="End the selected processes (Delete). Right-click a process for everything else."
+            className="rounded border border-border-subtle bg-surface-2 px-2.5 py-1 text-[11px] text-text-primary hover:border-border-strong disabled:cursor-default disabled:text-text-muted disabled:hover:border-border-subtle"
+          >
+            {chosen.length > 1 ? `End ${chosen.length} processes` : 'End task'}
+          </button>
         </>
       }
     >
@@ -279,15 +453,20 @@ export function ProcessesPage(): React.JSX.Element {
             cpuMode={cpuMode}
             viewMode={viewMode}
             collapsed={collapsed}
-            selectedKey={selectedKey}
-            onSelect={setSelectedKey}
+            selectedKeys={selection.keys}
+            reveal={reveal}
+            onRowClick={onRowClick}
+            onRowContextMenu={onRowContextMenu}
+            onKeyDown={onKeyDown}
             onToggle={onToggle}
             emptyMessage={
               processes.length === 0 ? 'Collecting the process list…' : 'No matching processes.'
             }
           />
         </div>
-        {selected && <ProcessDetails process={selected} onClose={() => setSelectedKey(null)} />}
+        {detailed && (
+          <ProcessDetails process={detailed} onClose={() => select(EMPTY_SELECTION)} />
+        )}
       </div>
     </PageShell>
   );
@@ -371,8 +550,11 @@ function VirtualRows({
   cpuMode,
   viewMode,
   collapsed,
-  selectedKey,
-  onSelect,
+  selectedKeys,
+  reveal,
+  onRowClick,
+  onRowContextMenu,
+  onKeyDown,
   onToggle,
   emptyMessage,
 }: {
@@ -380,8 +562,11 @@ function VirtualRows({
   cpuMode: CpuMode;
   viewMode: ViewMode;
   collapsed: ReadonlySet<string>;
-  selectedKey: string | null;
-  onSelect: (key: string) => void;
+  selectedKeys: ReadonlySet<string>;
+  reveal: { key: string; nonce: number } | null;
+  onRowClick: (key: string, event: React.MouseEvent) => void;
+  onRowContextMenu: (key: string, event: React.MouseEvent) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
   onToggle: (key: string) => void;
   emptyMessage: string;
 }): React.JSX.Element {
@@ -394,6 +579,22 @@ function VirtualRows({
     if (node) setViewportHeight(node.clientHeight);
   }, []);
 
+  // Scroll just far enough to show a row the keyboard or "Go to parent" moved
+  // to. Runs once per request, so it never fights the user's own scrolling.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!reveal || !node) return;
+    const index = rowsRef.current.findIndex((row) => row.process.key === reveal.key);
+    if (index < 0) return;
+    const top = index * ROW_HEIGHT;
+    if (top < node.scrollTop) node.scrollTop = top;
+    else if (top + ROW_HEIGHT > node.scrollTop + node.clientHeight) {
+      node.scrollTop = top + ROW_HEIGHT - node.clientHeight;
+    }
+  }, [reveal]);
+
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2;
   const last = Math.min(rows.length, first + visibleCount);
@@ -402,8 +603,13 @@ function VirtualRows({
   return (
     <div
       ref={measure}
+      role="listbox"
+      aria-multiselectable="true"
+      aria-label="Processes"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-      className="min-h-0 flex-1 overflow-y-auto"
+      className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-dim"
     >
       <div style={{ height: rows.length * ROW_HEIGHT, position: 'relative' }}>
         <div style={{ transform: `translateY(${first * ROW_HEIGHT}px)` }}>
@@ -414,8 +620,9 @@ function VirtualRows({
               cpuMode={cpuMode}
               treeMode={viewMode === 'tree'}
               collapsed={collapsed.has(row.process.key)}
-              selected={row.process.key === selectedKey}
-              onSelect={onSelect}
+              selected={selectedKeys.has(row.process.key)}
+              onClick={onRowClick}
+              onContextMenu={onRowContextMenu}
               onToggle={onToggle}
             />
           ))}
@@ -434,7 +641,8 @@ const ProcessRow = memo(function ProcessRow({
   treeMode,
   collapsed,
   selected,
-  onSelect,
+  onClick,
+  onContextMenu,
   onToggle,
 }: {
   row: Row;
@@ -442,7 +650,8 @@ const ProcessRow = memo(function ProcessRow({
   treeMode: boolean;
   collapsed: boolean;
   selected: boolean;
-  onSelect: (key: string) => void;
+  onClick: (key: string, event: React.MouseEvent) => void;
+  onContextMenu: (key: string, event: React.MouseEvent) => void;
   onToggle: (key: string) => void;
 }) {
   const { process, totals } = row;
@@ -474,9 +683,12 @@ const ProcessRow = memo(function ProcessRow({
 
   return (
     <div
-      onClick={() => onSelect(process.key)}
+      role="option"
+      aria-selected={selected}
+      onClick={(event) => onClick(process.key, event)}
+      onContextMenu={(event) => onContextMenu(process.key, event)}
       style={{ height: ROW_HEIGHT }}
-      className={`flex cursor-default items-center text-[12px] ${
+      className={`flex cursor-default select-none items-center text-[12px] ${
         selected ? 'bg-accent-dim/25' : 'hover:bg-surface-2'
       }`}
     >

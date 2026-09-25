@@ -5,6 +5,7 @@ import type {
   HostInfo,
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
+import type { ProcessMenuCommand, ProcessMenuRequest } from './process-actions.js';
 import type { WidgetSettings } from './widget.js';
 
 /**
@@ -52,6 +53,11 @@ export const IpcChannel = {
   SaveExport: 'export:save',
   /** invoke: (text: string) => boolean */
   CopyToClipboard: 'export:copy',
+
+  /** invoke: (request: ProcessMenuRequest) => ProcessMenuCommand */
+  ShowProcessMenu: 'process:showMenu',
+  /** invoke: (keys: string[]) => void - end the selection, asking first */
+  EndProcesses: 'process:end',
 
   /** invoke: () => DiagnosticsInfo */
   GetDiagnostics: 'diagnostics:get',
@@ -209,6 +215,21 @@ export interface TaskManagerApi {
   saveExport(suggestedName: string, contents: string): Promise<ExportSaveResult>;
   /** Put text on the system clipboard. Returns false if it could not be set. */
   copyToClipboard(text: string): Promise<boolean>;
+
+  // --- acting on processes -------------------------------------------------
+  /**
+   * Show the process menu for the given processes, at the pointer.
+   *
+   * Resolves once the menu has closed, with anything the page has to do
+   * itself - going to a parent row, say - or null. Everything that acts on a
+   * process happens in the main process, behind the menu.
+   */
+  showProcessMenu(request: ProcessMenuRequest): Promise<ProcessMenuCommand>;
+  /**
+   * End the given processes, the way the Delete key does: the main process
+   * asks first, then reports anything that could not be ended.
+   */
+  endProcesses(keys: string[]): Promise<void>;
 
   // --- diagnostics ---------------------------------------------------------
   /** Where the logs live and what has crashed recently. */

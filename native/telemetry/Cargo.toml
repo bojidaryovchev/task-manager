@@ -15,6 +15,7 @@ napi-derive = "3"
 version = "0.61"
 features = [
   "Win32_Foundation",
+  "Win32_Graphics_Dwm",
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_IO",
@@ -29,6 +30,8 @@ features = [
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_System_WindowsProgramming",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
 ]
 
 # SQLite, compiled from the bundled amalgamation so a build needs no system

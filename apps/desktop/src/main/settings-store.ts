@@ -44,10 +44,20 @@ export interface TraySettings {
   closeToTray: boolean;
 }
 
+export interface ProcessSettings {
+  /**
+   * Ask before ending a single process. Ending several at once, a process
+   * tree or a whole application always asks, because one slip there ends
+   * far more than was meant.
+   */
+  confirmEnd: boolean;
+}
+
 export interface AppSettings {
   widget: WidgetSettings;
   history: HistorySettings;
   tray: TraySettings;
+  processes: ProcessSettings;
 }
 
 const DEFAULTS: AppSettings = {
@@ -58,6 +68,7 @@ const DEFAULTS: AppSettings = {
   // Both on by default: this is how Windows Task Manager behaves, and it is
   // what the application is modelled on.
   tray: { liveIcon: true, hideWhenMinimized: true, closeToTray: true },
+  processes: { confirmEnd: true },
 };
 
 const WRITE_DEBOUNCE_MS = 400;
@@ -112,6 +123,17 @@ export class SettingsStore {
     return this.#settings.tray;
   }
 
+  get processes(): ProcessSettings {
+    return this.#settings.processes;
+  }
+
+  updateProcesses(patch: Partial<ProcessSettings>): ProcessSettings {
+    const next = { ...this.#settings.processes, ...patch };
+    this.#settings.processes = { confirmEnd: next.confirmEnd === true };
+    this.#scheduleWrite();
+    return this.#settings.processes;
+  }
+
   /** Merge a change into the tray settings and schedule a save. */
   updateTray(patch: Partial<TraySettings>): TraySettings {
     const next = { ...this.#settings.tray, ...patch };
@@ -157,6 +179,7 @@ export class SettingsStore {
         widget?: unknown;
         history?: { enabled?: unknown };
         tray?: { liveIcon?: unknown; hideWhenMinimized?: unknown; closeToTray?: unknown };
+        processes?: { confirmEnd?: unknown };
       };
       return {
         widget: normaliseWidgetSettings(source.widget),
@@ -168,6 +191,7 @@ export class SettingsStore {
           hideWhenMinimized: source.tray?.hideWhenMinimized !== false,
           closeToTray: source.tray?.closeToTray !== false,
         },
+        processes: { confirmEnd: source.processes?.confirmEnd !== false },
       };
     } catch (error) {
       // Missing on first run, and unreadable or corrupt if something went wrong.
@@ -183,6 +207,7 @@ export class SettingsStore {
         widget: { ...DEFAULTS.widget },
         history: { ...DEFAULTS.history },
         tray: { ...DEFAULTS.tray },
+        processes: { ...DEFAULTS.processes },
       };
     }
   }

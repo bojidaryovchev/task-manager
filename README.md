@@ -178,6 +178,9 @@ not documented — or documented and not produced — fails `pnpm typecheck`.
   `ipcRenderer`, `require`, `fs` or `child_process`.
 - Configuration arriving from the renderer is filtered key by key in the main
   process before it reaches the native module.
+- A page cannot end or change a process. It can only ask the main process to
+  show the process menu or to end the selection; the menu, the question before
+  anything is ended and the call into Windows all live in the main process.
 - Navigation and window opening are denied; external links go to the system
   browser.
 - A Content-Security-Policy on the renderer document permits no remote code and
@@ -203,12 +206,18 @@ user, architecture, session, protection, base priority, CPU (as machine share an
 as core equivalent), private working set, working set, private commit, peak
 working set, pools, virtual size, page and hard faults, threads, handles,
 cumulative and per-second I/O. Flat and tree views, with subtree totals for the
-metrics that are actually additive.
+metrics that are actually additive. Right-click for End task, End process tree,
+Close window, Switch to, Open file location, Properties, Search online and Copy;
+select several with Ctrl or Shift, end them with Delete, and hold Ctrl to freeze
+the list while you aim, as in Windows Task Manager. Every action checks the
+process's start time as well as its PID, so it can never reach a different
+program that inherited the PID.
 
 **Applications** — processes grouped into applications using only signals Windows
 provides: package identity first, then the publisher and product declared in the
 executable's version resource, then the executable path. Every group states which
-signal formed it and expands to the raw processes underneath.
+signal formed it and expands to the raw processes underneath. Right-click an
+application to switch to it, close its windows or end all of its processes.
 
 **GPU** — adapters from DXGI joined to the Windows GPU counter sets by LUID:
 per-adapter utilisation (the maximum across engine types, never a sum),

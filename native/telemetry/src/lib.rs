@@ -7,6 +7,9 @@
 //!   calculation, one module per subsystem, each owning the previous-sample
 //!   state its rates need.
 //! * `sampling` - the single engine that drives every collector on one cadence.
+//! * `control` - acting on processes for the process menu: ending them, closing
+//!   their windows, bringing them forward. Every action names its target by PID
+//!   and creation time, never by PID alone.
 //! * `api` - the N-API transport structures and conversions.
 //!
 //! Nothing above `win` contains a Windows call, and nothing below `api` knows
@@ -17,6 +20,7 @@
 
 pub mod api;
 pub mod clock;
+pub mod control;
 pub mod cpu;
 pub mod disk;
 pub mod gpu;

@@ -16,12 +16,15 @@
  */
 
 import type {
+  JsActionOutcome,
   JsCollectorConfig,
   JsHistoryPoint,
   JsHistoryResult,
   JsHostInfo,
+  JsProcessState,
   JsSystemSnapshot,
 } from '@task-manager/telemetry-native';
+import type { ActionOutcome, ProcessState } from '@shared/process-actions.js';
 import type {
   CollectorConfig,
   HistoryPoint,
@@ -47,5 +50,11 @@ type _HistoryPointIsDescribed = AssignableTo<JsHistoryPoint, HistoryPoint>;
 type _HistoryPointIsProduced = AssignableTo<HistoryPoint, JsHistoryPoint>;
 type _HistoryResultIsDescribed = AssignableTo<JsHistoryResult, HistoryResult>;
 type _HistoryResultIsProduced = AssignableTo<HistoryResult, JsHistoryResult>;
+
+// Acting on processes: what Rust reports is exactly what main and the menu read.
+type _ProcessStateIsDescribed = AssignableTo<JsProcessState, ProcessState>;
+type _ProcessStateIsProduced = AssignableTo<ProcessState, JsProcessState>;
+type _ActionOutcomeIsDescribed = AssignableTo<JsActionOutcome, ActionOutcome>;
+type _ActionOutcomeIsProduced = AssignableTo<ActionOutcome, JsActionOutcome>;
 
 export {};

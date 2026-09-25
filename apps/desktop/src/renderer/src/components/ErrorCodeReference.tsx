@@ -12,6 +12,7 @@ import { Note, Panel } from './primitives.js';
  */
 
 const SUBSYSTEM_LABELS: Record<ErrorSubsystem, string> = {
+  actions: 'Process actions',
   startup: 'Startup',
   collector: 'Collector',
   history: 'History',

@@ -27,6 +27,7 @@
  *
  * | Range | Subsystem |
  * |---|---|
+ * | 0xxx | Acting on processes and the system |
  * | 1xxx | Startup |
  * | 2xxx | Native collector |
  * | 3xxx | History database |
@@ -39,6 +40,7 @@
  */
 
 export type ErrorSubsystem =
+  | 'actions'
   | 'startup'
   | 'collector'
   | 'history'
@@ -66,6 +68,74 @@ export interface ErrorDefinition {
  * registry cannot drift from the codes actually referenced in the source.
  */
 export const ERROR_CODES = {
+  // --- 0xxx acting on processes and the system ------------------------------
+  'TM-0001': {
+    subsystem: 'actions',
+    title: 'Windows refused to let Task Manager act on the process',
+    meaning:
+      'The process runs with more privileges than Task Manager: as administrator, as a Windows service, or as another user. Windows only lets an application end or change processes at or below its own level. Nothing was done to it.',
+    action:
+      'Restart Task Manager as administrator (from the tray menu or the dialog that showed this code) and try again.',
+  },
+  'TM-0002': {
+    subsystem: 'actions',
+    title: 'The process is protected by Windows',
+    meaning:
+      'Windows protects some processes, such as antivirus engines and parts of Windows itself, from being ended or changed by any application, even one running as administrator. Nothing was done to it.',
+    action:
+      'Nothing can do this from Task Manager. A protected program can only be stopped through its own settings, or by uninstalling it.',
+  },
+  'TM-0003': {
+    subsystem: 'actions',
+    title: 'The process had been replaced',
+    meaning:
+      'The process you chose exited, and Windows gave its PID to a different program before the action ran. Task Manager checks the start time as well as the PID, noticed, and did nothing, so the other program was not touched.',
+    action: 'Find the program in the list again. If it restarted, it has a new row.',
+  },
+  'TM-0004': {
+    subsystem: 'actions',
+    title: 'Refused: the process is critical to Windows',
+    meaning:
+      'Windows marks this process as critical. Ending it stops the whole system with a blue screen and loses everything unsaved in every program, so Task Manager will not do it.',
+    action: 'If it is misbehaving, restart Windows instead.',
+  },
+  'TM-0005': {
+    subsystem: 'actions',
+    title: 'The process is still exiting',
+    meaning:
+      'Windows accepted the request to end it, but it had not finished exiting a few seconds later. That usually means a driver is completing an operation on its behalf, and Windows waits for that before the process can go.',
+    action:
+      'Wait. It disappears once the operation completes. If it never does, a driver is stuck and only restarting Windows clears it.',
+  },
+  'TM-0006': {
+    subsystem: 'actions',
+    title: 'Windows could not carry out the action',
+    meaning:
+      'The call into Windows failed for a reason other than permissions. The Windows error number shown alongside this code says which.',
+    action: 'Try again. If it keeps failing, report this code and the Windows error number.',
+  },
+  'TM-0007': {
+    subsystem: 'actions',
+    title: 'The window could not be brought to the front',
+    meaning:
+      'Windows only lets the application in front move the focus to another window, and it declined this time. Nothing else happened.',
+    action: "Click the program's button on the taskbar instead.",
+  },
+  'TM-0008': {
+    subsystem: 'actions',
+    title: "The program's windows could not be asked to close",
+    meaning:
+      'The program runs with more privileges than Task Manager, and Windows does not let an application send messages to one above it. Its windows are unaffected.',
+    action: 'Restart Task Manager as administrator and try again, or use End task.',
+  },
+  'TM-0009': {
+    subsystem: 'actions',
+    title: "The program's file could not be shown",
+    meaning:
+      "Windows could not open the folder or the properties of the program's executable, usually because the file was moved or deleted after the program started.",
+    action: 'Check whether the path shown still exists.',
+  },
+
   // --- 1xxx startup ---------------------------------------------------------
   'TM-1001': {
     subsystem: 'startup',

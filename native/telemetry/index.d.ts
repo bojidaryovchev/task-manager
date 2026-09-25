@@ -50,6 +50,24 @@ export declare class TelemetryEngine {
 }
 
 /**
+ * Bring a process's front-most window forward, restoring it if minimised.
+ *
+ * Resolves to `done`, `noWindows`, `refused` when Windows would not move the
+ * focus, `notRunning` or `identityChanged`.
+ */
+export declare function bringProcessToFront(key: string): JsActionOutcome
+
+/**
+ * Ask every taskbar window of a process to close, as its close button would.
+ *
+ * The program decides what happens next: it may close, ask to save, or ignore
+ * the request. Resolves to `requested` with how many windows were asked,
+ * `noWindows`, `accessDenied` when Windows would not deliver the request (the
+ * program runs with higher privileges), `notRunning` or `identityChanged`.
+ */
+export declare function closeProcessWindows(key: string): JsActionOutcome
+
+/**
  * Collect exactly one snapshot without starting the engine.
  *
  * Every rate is unavailable in the returned snapshot because a single reading
@@ -58,8 +76,31 @@ export declare class TelemetryEngine {
  */
 export declare function collectSingleSnapshot(): JsSystemSnapshot
 
+/**
+ * End a process and wait briefly to see it go.
+ *
+ * Resolves to `ended`, `stillExiting`, `critical` (refused: ending it would
+ * stop Windows), `notRunning`, `identityChanged`, `accessDenied`, or `failed`
+ * with the Windows error. Runs off the JavaScript thread, because the wait can
+ * last seconds.
+ */
+export declare function endProcess(key: string): Promise<JsActionOutcome>
+
 /** Static information about the machine and our own privileges. */
 export declare function getHostInfo(): JsHostInfo
+
+/** Read what the process menu may offer for a process. */
+export declare function inspectProcess(key: string): JsProcessState
+
+/** The result of an action. */
+export interface JsActionOutcome {
+  /** What happened. The possible values depend on the action. */
+  outcome: 'ended' | 'stillExiting' | 'critical' | 'requested' | 'noWindows' | 'done' | 'refused' | 'notRunning' | 'identityChanged' | 'accessDenied' | 'failed'
+  /** The Windows error code, when a call failed for a reason worth reporting. */
+  win32Error?: number
+  /** How many things the action touched, for the actions that touch several. */
+  count?: number
+}
 
 export interface JsCollectionDiagnostics {
   totalDurationMs: number
@@ -432,6 +473,34 @@ export interface JsProcessSnapshot {
    * be checked against it exactly.
    */
   detailFailure?: 'accessDenied' | 'processExited' | 'notSupported' | 'pending'
+}
+
+/** What the process menu needs to know before it is shown. */
+export interface JsProcessState {
+  /**
+   * `running`, or why the process cannot be reached: `notRunning`,
+   * `identityChanged` (the PID now belongs to another process) or
+   * `accessDenied` (even reading it is refused).
+   */
+  status: 'running' | 'notRunning' | 'identityChanged' | 'accessDenied'
+  /** Windows would let this application end it. */
+  canEnd: boolean
+  /**
+   * Windows would let this application change its priority, efficiency
+   * mode or affinity.
+   */
+  canAdjust: boolean
+  /** Ending it would stop Windows. Absent when that could not be read. */
+  isCritical?: boolean
+  /** Its windows on the taskbar. */
+  windowCount: number
+  /** It is the Windows shell: the Explorer that owns the taskbar. */
+  isShell: boolean
+  /**
+   * `idle`, `belowNormal`, `normal`, `aboveNormal`, `high` or `realtime`.
+   * Absent when it cannot be read.
+   */
+  priorityClass?: 'idle' | 'belowNormal' | 'normal' | 'aboveNormal' | 'high' | 'realtime'
 }
 
 export interface JsSystemSnapshot {

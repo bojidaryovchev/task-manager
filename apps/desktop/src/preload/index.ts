@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CollectorConfig, SystemSnapshot } from '@task-manager/telemetry-types';
 import { IpcChannel, type TaskManagerApi } from '@shared/ipc';
+import type { ProcessMenuRequest } from '@shared/process-actions';
 import type { WidgetSettings } from '@shared/widget';
 
 /**
@@ -38,6 +39,10 @@ const api: TaskManagerApi = {
     ipcRenderer.invoke(IpcChannel.SaveExport, String(suggestedName), String(contents)),
   copyToClipboard: (text: string) =>
     ipcRenderer.invoke(IpcChannel.CopyToClipboard, String(text)),
+
+  showProcessMenu: (request: ProcessMenuRequest) =>
+    ipcRenderer.invoke(IpcChannel.ShowProcessMenu, request),
+  endProcesses: (keys: string[]) => ipcRenderer.invoke(IpcChannel.EndProcesses, keys),
 
   getDiagnostics: () => ipcRenderer.invoke(IpcChannel.GetDiagnostics),
   openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),

@@ -384,6 +384,7 @@ Windows reuses PIDs. Anything that must survive across samples is keyed on
 - the cache of handle-derived details;
 - parent links in the process tree;
 - React row identity;
+- every action on a process: ending it, closing its windows, switching to it;
 - anything persisted later.
 
 Keying on PID alone would let a CPU delta be computed between two unrelated
@@ -392,6 +393,69 @@ programs that happened to share a PID, showing up as an enormous spike.
 The identity string is formatted in Rust because a FILETIME creation timestamp
 (~1.3 × 10¹⁷) exceeds the exact integer range of a JavaScript double. The numeric
 `createTime100ns` field is display-only and documented as such.
+
+## Acting on processes
+
+The process menu, the Delete key and the End task button can end processes,
+close their windows and bring them forward. That is the one place this
+application can do real damage, so it is built around four rules.
+
+**The right process, always.** Every action names its target by PID and
+creation time, and the native side opens the process and compares its creation
+time before doing anything else. Once the handle is open the comparison cannot
+go stale: a handle keeps the process object alive, and Windows does not hand
+out a PID while its process object exists. A test confirms that the creation
+time `NtQuerySystemInformation` reports - the one in every snapshot key - is
+the value `GetProcessTimes` checks against, and others confirm that a stale
+identity is refused with the process left running, and that a PID nobody has is
+reported as gone.
+
+**Pages never act.** A page asks the main process to show the menu for some
+keys, or to end the selection, and nothing more. The menu, the question before
+anything is ended, the call into Windows and the report of what happened all
+live in the main process, so nothing on a page can end a process without a menu
+the user clicked or a question the user answered. Requests are validated at the
+boundary and dropped whole if any part is malformed.
+
+**Ask carefully.** Ending one process asks first, unless the user has said not
+to; ending several, a tree or a whole application always asks. Cancel is the
+default button, because these questions open with keyboard focus and an Enter
+pressed for something else must never end anything. Only one action waits for
+an answer at a time, and a request that arrives meanwhile is dropped rather
+than stacked: Electron parents a message box to its window only while that
+window is enabled (`message_box_win.cc`), which the first question has just
+disabled, so a second one would float free of the application.
+
+**Refuse what cannot be undone, and say why.** A process Windows marks as
+critical (`IsProcessCritical`) is never ended, because ending one stops the
+system with a bug check. Everything else that fails is reported with a code
+from the 0xxx block: refused for lack of privilege, protected, replaced by
+another program, still exiting, or a Windows error by number.
+
+### What Windows allows without administrator rights
+
+Measured on the development machine: of 639 processes, an unelevated process
+could open 447 to end them and was refused the other 192. 179 of those were
+services in session 0; the rest were the session's own system processes
+(`csrss`, `winlogon`, `dwm`) and vendor tools running as administrator. A refusal
+therefore says whether administrator rights would help, and the menu marks a
+process that needs them before it is chosen.
+
+### Which windows are a program's windows
+
+Close and Switch to act on the windows a program has on the taskbar, using
+the rule Windows documents in "Managing Taskbar Buttons": a visible window with
+no owner, unless it is a tool window, or any visible window marked as an app
+window. Cloaked windows and the shell's own surfaces - the taskbar and the
+desktop - are excluded, so asking Explorer's windows to close can never reach
+the taskbar.
+
+### Holding Ctrl
+
+As in Windows Task Manager, holding Ctrl freezes the Processes and Applications
+lists, values and order, so a row can be clicked, or Ctrl-clicked into a
+selection, without sorting away under the pointer. The hold ends when the key
+is released or the window loses focus.
 
 ## Renderer performance
 

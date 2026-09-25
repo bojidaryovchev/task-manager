@@ -69,6 +69,21 @@ describe('tray settings', () => {
   });
 });
 
+describe('process settings', () => {
+  it('ask before ending a process unless told not to', () => {
+    expect(new SettingsStore(path).processes).toEqual({ confirmEnd: true });
+    writeFileSync(path, JSON.stringify({ processes: { confirmEnd: 'no' } }), 'utf8');
+    expect(new SettingsStore(path).processes).toEqual({ confirmEnd: true });
+  });
+
+  it("remember \"don't ask again\"", () => {
+    const first = new SettingsStore(path);
+    first.updateProcesses({ confirmEnd: false });
+    first.flush();
+    expect(new SettingsStore(path).processes).toEqual({ confirmEnd: false });
+  });
+});
+
 describe('reading the file', () => {
   it('treats a missing file as a first run, not a problem', () => {
     expect(new SettingsStore(path).takeProblems()).toEqual([]);

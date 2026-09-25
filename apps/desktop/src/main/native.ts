@@ -9,6 +9,7 @@ import type {
   HostInfo,
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
+import type { ActionOutcome, ProcessState } from '@shared/process-actions.js';
 
 /**
  * The native telemetry module, as N-API generates it.
@@ -29,6 +30,21 @@ export interface NativeTelemetryModule {
   registerForRestart(commandLine: string): boolean;
   /** Cancel that, so a deliberate quit is never mistaken for a crash. */
   unregisterForRestart(): boolean;
+
+  // --- acting on processes ---------------------------------------------------
+  // Every one takes a process key, `pid:createTime100ns`, and does nothing
+  // unless that PID still belongs to the process created at that time.
+
+  /** What the process menu may offer for a process. Fast enough to call per menu. */
+  inspectProcess(key: string): ProcessState;
+  /** End a process and wait up to a few seconds to see it go. */
+  endProcess(key: string): Promise<ActionOutcome>;
+  /** Ask every taskbar window of a process to close, as its close button would. */
+  closeProcessWindows(key: string): ActionOutcome;
+  /** Bring a process's front-most window forward, restoring it if minimised. */
+  bringProcessToFront(key: string): ActionOutcome;
+  /** Show Windows' Properties dialog for a file. False when it could not. */
+  showFileProperties(path: string): boolean;
 }
 
 export interface NativeEngine {
