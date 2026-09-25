@@ -119,6 +119,11 @@ export interface NativeEngine {
   disableHistory(): void;
   queryHistory(fromUnixMs: number, toUnixMs: number): HistoryResult;
   historyTiers(): HistoryTier[];
+  /**
+   * Delete all recorded history, including rows the sampler still holds in
+   * memory. Resolves to whether the clear was confirmed.
+   */
+  clearHistory(path: string): Promise<boolean>;
 }
 
 export interface NativeLoadResult {

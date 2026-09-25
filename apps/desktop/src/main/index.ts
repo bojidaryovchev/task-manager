@@ -27,6 +27,7 @@ import { ExportService } from './export-service.js';
 import { Logger } from './logger.js';
 import { loadNative } from './native.js';
 import { ProcessActions } from './process-actions.js';
+import { codeLines } from './process-menu.js';
 import { readCommand, runNewTask } from './run-task.js';
 import { Resilience, WINDOWS_RESTART_ARGUMENT } from './resilience.js';
 import { SettingsStore } from './settings-store.js';
@@ -334,6 +335,42 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     service.queryHistory(typeof from === 'number' ? from : 0, typeof to === 'number' ? to : 0),
   );
   ipcMain.handle(IpcChannel.GetHistoryStatus, () => service.historyStatus);
+  ipcMain.handle(IpcChannel.ClearHistory, async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const options: Electron.MessageBoxOptions = {
+      type: 'warning',
+      title: 'Task Manager',
+      message: 'Delete all recorded history?',
+      detail:
+        'Every recorded sample, from the last ten minutes to the last seven days, is deleted and the file is compacted so none of it lingers on disk. Recording carries on from now. This cannot be undone.',
+      buttons: ['Delete history', 'Cancel'],
+      // Cancel is the default: an Enter meant for something else must not
+      // delete a week of history.
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    };
+    const answer = window
+      ? await dialog.showMessageBox(window, options)
+      : await dialog.showMessageBox(options);
+    if (answer.response !== 0) return service.historyStatus;
+    const cleared = await service.clearHistory();
+    if (cleared) {
+      logger?.info('history', "all recorded history deleted at the user's request");
+    } else {
+      logger?.warn('TM-3003', 'clearing history was not confirmed');
+      const failure: Electron.MessageBoxOptions = {
+        type: 'warning',
+        title: 'Task Manager',
+        message: 'History could not be cleared.',
+        detail: codeLines('TM-3003'),
+        buttons: ['OK'],
+        noLink: true,
+      };
+      await (window ? dialog.showMessageBox(window, failure) : dialog.showMessageBox(failure));
+    }
+    return service.historyStatus;
+  });
   ipcMain.handle(IpcChannel.SetHistoryEnabled, (_event, enabled: unknown) => {
     const wanted = enabled === true;
     settings?.setHistoryEnabled(wanted);

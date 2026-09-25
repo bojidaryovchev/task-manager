@@ -370,6 +370,20 @@ blocking the writer, so the UI asking for a week of history never stalls the
 sampler. With history disabled no database is opened and nothing is written —
 the collector's only disk activity.
 
+### Clearing history
+
+Clear history, on the History page, deletes every recorded row and compacts
+the file so none of it lingers in free pages. It has to happen on the sampling
+thread, because that thread owns the store and holds rows not yet written: the
+last few seconds of the finest tier, and a partly filled average in every
+coarser one. Cleared from anywhere else, those would be written afterwards and
+carry samples from before the clear into history recorded after it. So the
+request sets a flag the sampler acts on before its next sample, and the caller
+waits for it to confirm. A test fills the averages, clears, and checks that the
+next five-second row is made of new samples alone; with the averages left
+uncleared it fails. Checked against the live sampler: 26 rows, confirmed in
+101 ms, none left. It asks first, with Cancel as the default.
+
 ## Colour and contrast
 
 The palette lives as design tokens in `styles.css`, and `pnpm check:contrast`

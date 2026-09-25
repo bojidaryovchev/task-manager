@@ -308,6 +308,15 @@ export const ERROR_CODES = {
     action: 'Usually transient. If it repeats, the database file may be corrupt; delete history.db.',
   },
 
+  'TM-3003': {
+    subsystem: 'history',
+    title: 'History could not be cleared',
+    meaning:
+      'The request to delete recorded history was not confirmed, so some or all of it may still be on disk. Recording carries on either way.',
+    action:
+      'Try again. To be certain, close Task Manager and delete history.db from the folder shown on the History page.',
+  },
+
   // --- 4xxx settings --------------------------------------------------------
   'TM-4001': {
     subsystem: 'settings',

@@ -115,6 +115,12 @@ pub struct EngineState {
     /// last snapshot forever. Recording it here lets the application say the
     /// collector died instead of quietly showing stale numbers.
     pub panic_message: Mutex<Option<String>>,
+    /// Set to ask the sampling thread to clear history before its next
+    /// sample. It owns the store and its in-memory rows, so it is the one
+    /// place a clear can be complete.
+    pub clear_history_requested: AtomicBool,
+    /// Counts completed clears, so whoever asked can tell theirs happened.
+    pub history_clears: AtomicU64,
 }
 
 impl EngineState {
@@ -127,6 +133,8 @@ impl EngineState {
             sequence: AtomicU64::new(0),
             dropped: AtomicU32::new(0),
             panic_message: Mutex::new(None),
+            clear_history_requested: AtomicBool::new(false),
+            history_clears: AtomicU64::new(0),
         }
     }
 }
@@ -388,6 +396,15 @@ impl Collectors {
         };
 
         // --- history
+        if state.clear_history_requested.swap(false, Ordering::SeqCst) {
+            if let Some(history) = self.history.as_mut() {
+                // A failure leaves the store as it was; the count still moves,
+                // so the caller is not left waiting, and the rows it can still
+                // see say what happened.
+                let _ = history.clear();
+            }
+            state.history_clears.fetch_add(1, Ordering::SeqCst);
+        }
         self.record_history(
             state,
             monotonic_ms,

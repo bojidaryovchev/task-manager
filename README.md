@@ -248,7 +248,8 @@ outbound discards, with loopback flagged and excluded from totals.
 5-second means for an hour, 1-minute means for a day, 5-minute means for a week.
 Each point carries the peak within its window alongside the mean, because an
 average hides the spike a post-hoc question is about. Around 5400 rows total, so
-the database stays a few hundred kilobytes however long it runs.
+the database stays a few hundred kilobytes however long it runs. Clear history
+deletes all of it, including rows still in memory, and compacts the file.
 
 **Temperature** — the three sources readable without administrator, each shown
 under the name of the sensor that produced it: NVIDIA GPU die temperature via

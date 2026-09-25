@@ -11,6 +11,8 @@ import {
 import type { HistoryStatus } from '@shared/ipc';
 import { Chart, type ChartSeries } from '../components/Chart.js';
 import { Field, Note, PageShell, Panel } from '../components/primitives.js';
+import { PageMenu } from '../components/PageMenu.js';
+import { useNavigate } from '../lib/navigation.js';
 
 /**
  * Historical telemetry.
@@ -65,6 +67,16 @@ export function HistoryPage(): React.JSX.Element {
     return () => clearInterval(timer);
   }, [load]);
 
+  const navigate = useNavigate();
+
+  const clearHistory = (): void => {
+    // The main process asks first, with Cancel as the default.
+    void window.taskManager.clearHistory().then((next) => {
+      setStatus(next);
+      void load();
+    });
+  };
+
   const toggleRecording = (): void => {
     void window.taskManager.setHistoryEnabled(!(status?.enabled ?? false)).then((next) => {
       setStatus(next);
@@ -108,114 +120,141 @@ export function HistoryPage(): React.JSX.Element {
         </>
       }
     >
-      {!status?.enabled && (
-        <Panel className="mb-4" title="Recording is off">
-          <div className="text-[12px] text-text-secondary">
-            Nothing is being written to disk. Existing history is kept and can still be read.
-          </div>
-        </Panel>
-      )}
+      <PageMenu
+        title="History"
+        metrics={[]}
+        showHistory={false}
+        extra={[
+          { id: 'export', label: 'Export…' },
+          { id: 'clear', label: 'Clear history…' },
+        ]}
+        onExtra={(id) => {
+          if (id === 'export') navigate('export');
+          if (id === 'clear') clearHistory();
+        }}
+      >
+        {!status?.enabled && (
+          <Panel className="mb-4" title="Recording is off">
+            <div className="text-[12px] text-text-secondary">
+              Nothing is being written to disk. Existing history is kept and can still be read.
+            </div>
+          </Panel>
+        )}
 
-      {points.length === 0 ? (
-        <Panel title="No data for this range">
-          <div className="text-[12px] text-text-secondary">
-            {status?.enabled
-              ? 'History is recorded as the application runs, so a longer range fills in over time. The coarser tiers only gain a point once their window has elapsed.'
-              : 'Turn recording on to start collecting history.'}
-          </div>
-        </Panel>
-      ) : (
-        <div className="grid gap-4">
-          <HistoryChart
-            title="CPU"
-            hint="Mean over each window, with the peak drawn behind it"
-            points={points}
-            max={100}
-            series={[
-              { key: 'cpuTimePeakPercent', color: 'var(--color-chart-comparison)', label: 'Peak', dashed: true },
-              { key: 'cpuTimePercent', color: 'var(--color-cpu)', label: 'Time utilization', fill: true },
-              { key: 'cpuUtilityPercent', color: 'var(--color-warn)', label: 'Processor utility' },
-            ]}
-            format={(value) => formatPercent(value)}
-          />
-          <HistoryChart
-            title="Memory"
-            hint="Physical memory in use"
-            points={points}
-            series={[
-              { key: 'memoryUsedPeakBytes', color: 'var(--color-chart-comparison)', label: 'Peak', dashed: true },
-              { key: 'memoryUsedBytes', color: 'var(--color-memory)', label: 'In use', fill: true },
-              { key: 'memoryCommittedBytes', color: 'var(--color-gpu)', label: 'Committed' },
-            ]}
-            format={formatBytes}
-          />
-          <HistoryChart
-            title="Disk"
-            hint="Throughput across all physical disks"
-            points={points}
-            series={[
-              { key: 'diskTotalPeakBytesPerSecond', color: 'var(--color-chart-comparison)', label: 'Peak total', dashed: true },
-              { key: 'diskReadBytesPerSecond', color: 'var(--color-disk)', label: 'Read', fill: true },
-              { key: 'diskWriteBytesPerSecond', color: 'var(--color-network)', label: 'Write' },
-            ]}
-            format={formatBytesPerSecond}
-          />
-          <HistoryChart
-            title="Network"
-            hint="Non-loopback adapters"
-            points={points}
-            series={[
-              { key: 'networkDownBytesPerSecond', color: 'var(--color-network)', label: 'Download', fill: true },
-              { key: 'networkUpBytesPerSecond', color: 'var(--color-disk)', label: 'Upload' },
-            ]}
-            format={formatBitsPerSecond}
-          />
-          <HistoryChart
-            title="GPU"
-            hint="Busiest hardware adapter"
-            points={points}
-            max={100}
-            series={[{ key: 'gpuPercent', color: 'var(--color-gpu)', label: 'Utilisation', fill: true }]}
-            format={(value) => formatPercent(value)}
-          />
-          <HistoryChart
-            title="Counts"
-            hint="Processes, threads and handles — a steadily climbing line is a leak"
-            points={points}
-            series={[
-              { key: 'processCount', color: 'var(--color-cpu)', label: 'Processes' },
-              { key: 'threadCount', color: 'var(--color-memory)', label: 'Threads' },
-              { key: 'handleCount', color: 'var(--color-warn)', label: 'Handles' },
-            ]}
-            format={formatCount}
-          />
-        </div>
-      )}
-
-      <Panel className="mt-4" title="Storage" hint={status?.path}>
-        <div className="text-[12px]">
-          <Field label="Recording" value={status?.enabled ? 'On' : 'Off'} />
-          <Field
-            label="Answering tier"
-            value={`${meta.tier} — ${TIER_LABELS[meta.tier] ?? 'unknown'}`}
-            definition="A query is answered from the finest tier whose retention covers the requested span."
-          />
-          {(status?.tiers ?? []).map((tier) => (
-            <Field
-              key={tier.tier}
-              label={`Tier ${tier.tier} (${TIER_LABELS[tier.tier] ?? '?'})`}
-              value={`${formatCount(tier.rowCount)} rows`}
+        {points.length === 0 ? (
+          <Panel title="No data for this range">
+            <div className="text-[12px] text-text-secondary">
+              {status?.enabled
+                ? 'History is recorded as the application runs, so a longer range fills in over time. The coarser tiers only gain a point once their window has elapsed.'
+                : 'Turn recording on to start collecting history.'}
+            </div>
+          </Panel>
+        ) : (
+          <div className="grid gap-4">
+            <HistoryChart
+              title="CPU"
+              hint="Mean over each window, with the peak drawn behind it"
+              points={points}
+              max={100}
+              series={[
+                { key: 'cpuTimePeakPercent', color: 'var(--color-chart-comparison)', label: 'Peak', dashed: true },
+                { key: 'cpuTimePercent', color: 'var(--color-cpu)', label: 'Time utilization', fill: true },
+                { key: 'cpuUtilityPercent', color: 'var(--color-warn)', label: 'Processor utility' },
+              ]}
+              format={(value) => formatPercent(value)}
             />
-          ))}
-        </div>
-      </Panel>
+            <HistoryChart
+              title="Memory"
+              hint="Physical memory in use"
+              points={points}
+              series={[
+                { key: 'memoryUsedPeakBytes', color: 'var(--color-chart-comparison)', label: 'Peak', dashed: true },
+                { key: 'memoryUsedBytes', color: 'var(--color-memory)', label: 'In use', fill: true },
+                { key: 'memoryCommittedBytes', color: 'var(--color-gpu)', label: 'Committed' },
+              ]}
+              format={formatBytes}
+            />
+            <HistoryChart
+              title="Disk"
+              hint="Throughput across all physical disks"
+              points={points}
+              series={[
+                { key: 'diskTotalPeakBytesPerSecond', color: 'var(--color-chart-comparison)', label: 'Peak total', dashed: true },
+                { key: 'diskReadBytesPerSecond', color: 'var(--color-disk)', label: 'Read', fill: true },
+                { key: 'diskWriteBytesPerSecond', color: 'var(--color-network)', label: 'Write' },
+              ]}
+              format={formatBytesPerSecond}
+            />
+            <HistoryChart
+              title="Network"
+              hint="Non-loopback adapters"
+              points={points}
+              series={[
+                { key: 'networkDownBytesPerSecond', color: 'var(--color-network)', label: 'Download', fill: true },
+                { key: 'networkUpBytesPerSecond', color: 'var(--color-disk)', label: 'Upload' },
+              ]}
+              format={formatBitsPerSecond}
+            />
+            <HistoryChart
+              title="GPU"
+              hint="Busiest hardware adapter"
+              points={points}
+              max={100}
+              series={[{ key: 'gpuPercent', color: 'var(--color-gpu)', label: 'Utilisation', fill: true }]}
+              format={(value) => formatPercent(value)}
+            />
+            <HistoryChart
+              title="Counts"
+              hint="Processes, threads and handles — a steadily climbing line is a leak"
+              points={points}
+              series={[
+                { key: 'processCount', color: 'var(--color-cpu)', label: 'Processes' },
+                { key: 'threadCount', color: 'var(--color-memory)', label: 'Threads' },
+                { key: 'handleCount', color: 'var(--color-warn)', label: 'Handles' },
+              ]}
+              format={formatCount}
+            />
+          </div>
+        )}
 
-      <Note>
-        Each stored point is an exact mean over its window, computed from every sample rather than
-        from a coarser average, and carries the peak within that window alongside it — an average
-        over five minutes hides exactly the spike a post-hoc question is about. Retention is
-        tiered, so the database stays a few hundred kilobytes however long the application runs.
-      </Note>
+        <Panel
+          className="mt-4"
+          title="Storage"
+          hint={status?.path}
+          actions={
+            <button
+              type="button"
+              onClick={clearHistory}
+              className="rounded border border-border-subtle bg-surface-2 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary"
+            >
+              Clear history…
+            </button>
+          }
+        >
+          <div className="text-[12px]">
+            <Field label="Recording" value={status?.enabled ? 'On' : 'Off'} />
+            <Field
+              label="Answering tier"
+              value={`${meta.tier} — ${TIER_LABELS[meta.tier] ?? 'unknown'}`}
+              definition="A query is answered from the finest tier whose retention covers the requested span."
+            />
+            {(status?.tiers ?? []).map((tier) => (
+              <Field
+                key={tier.tier}
+                label={`Tier ${tier.tier} (${TIER_LABELS[tier.tier] ?? '?'})`}
+                value={`${formatCount(tier.rowCount)} rows`}
+              />
+            ))}
+          </div>
+        </Panel>
+
+        <Note>
+          Each stored point is an exact mean over its window, computed from every sample rather than
+          from a coarser average, and carries the peak within that window alongside it — an average
+          over five minutes hides exactly the spike a post-hoc question is about. Retention is
+          tiered, so the database stays a few hundred kilobytes however long the application runs.
+        </Note>
+      </PageMenu>
     </PageShell>
   );
 }

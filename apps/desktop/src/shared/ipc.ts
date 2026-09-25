@@ -60,6 +60,8 @@ export const IpcChannel = {
   GetHistoryStatus: 'history:getStatus',
   /** invoke: (enabled: boolean) => HistoryStatus */
   SetHistoryEnabled: 'history:setEnabled',
+  /** invoke: () => HistoryStatus - asks first, then deletes everything recorded */
+  ClearHistory: 'history:clear',
 
   /** invoke: (suggestedName, contents) => ExportSaveResult */
   SaveExport: 'export:save',
@@ -248,6 +250,11 @@ export interface TaskManagerApi {
   getHistoryStatus(): Promise<HistoryStatus>;
   /** Turn recording on or off. With it off nothing is written to disk. */
   setHistoryEnabled(enabled: boolean): Promise<HistoryStatus>;
+  /**
+   * Delete everything recorded. The main process asks first; resolves with
+   * the status afterwards, whatever the answer.
+   */
+  clearHistory(): Promise<HistoryStatus>;
 
   // --- export --------------------------------------------------------------
   /**

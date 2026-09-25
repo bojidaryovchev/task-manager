@@ -361,6 +361,19 @@ impl HistoryStore {
     }
 
     /// Drop rows past each tier's retention.
+    /// Delete everything recorded, including what is still in memory: the
+    /// buffered recent rows and each tier's partly filled average, which would
+    /// otherwise carry samples from before the clear into the next rows
+    /// written. Then compact the file, so deleted data does not linger in its
+    /// free pages.
+    pub fn clear(&mut self) -> rusqlite::Result<()> {
+        self.pending.clear();
+        self.accumulators = Default::default();
+        self.connection.execute("DELETE FROM samples", [])?;
+        self.connection.execute_batch("VACUUM")?;
+        Ok(())
+    }
+
     fn prune(&mut self, now_unix_ms: f64) {
         for config in TIERS.iter() {
             let cutoff = now_unix_ms - config.retention_ms as f64;
@@ -518,6 +531,51 @@ mod tests {
         let mut store = HistoryStore::open(Path::new(":memory:")).expect("open");
         store.last_prune_ms = f64::MAX / 2.0;
         store
+    }
+
+    #[test]
+    fn clearing_leaves_nothing_behind_not_even_in_memory() {
+        let mut store = store();
+        // Enough to write rows in the finer tiers and leave coarser ones part
+        // filled with samples from before the clear.
+        for index in 0..30 {
+            let at = 1_000_000.0 + index as f64 * 500.0;
+            store.record(at, at, &sample(80.0, 1.0));
+        }
+        store.flush();
+        assert!(store.row_counts().iter().any(|(_, rows)| *rows > 0));
+
+        store.clear().expect("clear");
+        assert!(store.row_counts().iter().all(|(_, rows)| *rows == 0));
+
+        // Six seconds after the clear, enough to complete a five-second row:
+        // every row written must be of these samples alone, not an average
+        // that still carries the old 80%.
+        for index in 0..13 {
+            let at = 2_000_000.0 + index as f64 * 500.0;
+            store.record(at, at, &sample(10.0, 1.0));
+        }
+        store.flush();
+        let cpu: Vec<f64> = store
+            .connection
+            .prepare("SELECT cpu_time FROM samples")
+            .expect("prepare")
+            .query_map([], |row| row.get(0))
+            .expect("query")
+            .map(|value| value.expect("row"))
+            .collect();
+        assert!(!cpu.is_empty());
+        assert!(cpu.iter().all(|value| *value == 10.0), "{cpu:?}");
+        let five_second_rows: u32 = store
+            .connection
+            .query_row("SELECT COUNT(*) FROM samples WHERE tier = 1", [], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        assert!(
+            five_second_rows > 0,
+            "a five-second row was written after the clear"
+        );
     }
 
     #[test]

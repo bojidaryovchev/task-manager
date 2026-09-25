@@ -20,6 +20,15 @@ export declare class TelemetryEngine {
    * a week of data never stalls the sampler.
    */
   queryHistory(fromUnixMs: number, toUnixMs: number): JsHistoryResult
+  /**
+   * Delete all recorded history, including rows still held in memory.
+   *
+   * While sampling, the sampling thread owns the store and its unwritten
+   * rows, so it is asked to do the clear and this waits for it to confirm;
+   * otherwise the database at `path` is cleared directly. Resolves to
+   * whether the clear was confirmed.
+   */
+  clearHistory(path: string): Promise<boolean>
   /** Rows currently stored per tier, for the debug view. */
   historyTiers(): Array<JsHistoryTier>
   /**

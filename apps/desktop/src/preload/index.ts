@@ -58,6 +58,7 @@ const api: TaskManagerApi = {
   getHistoryStatus: () => ipcRenderer.invoke(IpcChannel.GetHistoryStatus),
   setHistoryEnabled: (enabled: boolean) =>
     ipcRenderer.invoke(IpcChannel.SetHistoryEnabled, enabled === true),
+  clearHistory: () => ipcRenderer.invoke(IpcChannel.ClearHistory),
 
   saveExport: (suggestedName: string, contents: string) =>
     ipcRenderer.invoke(IpcChannel.SaveExport, String(suggestedName), String(contents)),

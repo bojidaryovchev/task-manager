@@ -15,6 +15,7 @@ export function PageMenu({
   metrics,
   extra = [],
   onExtra,
+  showHistory = true,
   children,
 }: {
   /** Heads the copied text. */
@@ -24,6 +25,8 @@ export function PageMenu({
   /** Page-specific items, placed above Open History. */
   extra?: MenuItemSpec[];
   onExtra?: (id: string) => void;
+  /** Offer Open History; off on the History page itself. */
+  showHistory?: boolean;
   children: ReactNode;
 }): React.JSX.Element {
   const content = useRef<HTMLDivElement | null>(null);
@@ -45,7 +48,10 @@ export function PageMenu({
         });
       }
     }
-    items.push({ type: 'separator' }, ...extra, { id: 'history', label: 'Open History' });
+    items.push({ type: 'separator' }, ...extra);
+    if (showHistory) items.push({ id: 'history', label: 'Open History' });
+    // A trailing separator would draw as a stray line at the bottom.
+    while (items.at(-1)?.type === 'separator') items.pop();
 
     const chosen = await window.taskManager.showMenu(items);
     if (chosen === 'copy') {

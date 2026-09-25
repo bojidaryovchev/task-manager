@@ -38,6 +38,7 @@ use std::sync::{Arc, Mutex};
 
 use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::{Env, Task};
 use napi_derive::napi;
 
 use crate::api::{
@@ -135,6 +136,20 @@ impl TelemetryEngine {
             resolution_ms: history::tier_resolution_ms(tier),
             available: true,
         }
+    }
+
+    /// Delete all recorded history, including rows still held in memory.
+    ///
+    /// While sampling, the sampling thread owns the store and its unwritten
+    /// rows, so it is asked to do the clear and this waits for it to confirm;
+    /// otherwise the database at `path` is cleared directly. Resolves to
+    /// whether the clear was confirmed.
+    #[napi(ts_return_type = "Promise<boolean>")]
+    pub fn clear_history(&self, path: String) -> AsyncTask<ClearHistory> {
+        AsyncTask::new(ClearHistory {
+            state: Arc::clone(&self.state),
+            path,
+        })
     }
 
     /// Rows currently stored per tier, for the debug view.
@@ -258,6 +273,52 @@ impl TelemetryEngine {
 impl Drop for TelemetryEngine {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+pub struct ClearHistory {
+    state: Arc<EngineState>,
+    path: String,
+}
+
+impl Task for ClearHistory {
+    type Output = bool;
+    type JsValue = bool;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let running = self.state.running.load(Ordering::SeqCst);
+        let history_on = self
+            .state
+            .history_path
+            .lock()
+            .map(|path| path.is_some())
+            .unwrap_or(false);
+        if running && history_on {
+            let before = self.state.history_clears.load(Ordering::SeqCst);
+            self.state
+                .clear_history_requested
+                .store(true, Ordering::SeqCst);
+            // The next sample does it; the slowest update speed is four
+            // seconds, so this is generous.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            while std::time::Instant::now() < deadline {
+                if self.state.history_clears.load(Ordering::SeqCst) > before {
+                    return Ok(true);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            return Ok(false);
+        }
+        // Nothing is writing: clear the file directly.
+        Ok(
+            history::HistoryStore::open(std::path::Path::new(&self.path))
+                .and_then(|mut store| store.clear())
+                .is_ok(),
+        )
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
     }
 }
 

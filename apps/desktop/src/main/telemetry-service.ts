@@ -141,6 +141,15 @@ export class TelemetryService {
     };
   }
 
+  /**
+   * Delete all recorded history. Resolves to whether it was confirmed, which
+   * is false when there is no database to clear.
+   */
+  async clearHistory(): Promise<boolean> {
+    if (!this.#engine || !this.#historyPath) return false;
+    return this.#engine.clearHistory(this.#historyPath);
+  }
+
   queryHistory(fromUnixMs: number, toUnixMs: number): HistoryResult {
     return (
       this.#engine?.queryHistory(fromUnixMs, toUnixMs) ?? {
