@@ -212,6 +212,25 @@ side by side makes the discrepancy self-explanatory.
 
 ---
 
+<a id="metric-kernel-time"></a>
+### Metric: kernel time
+
+**Field:** `cpu.aggregateKernelPercent`
+
+**Definition.** Machine-wide share of processor time spent busy in kernel mode,
+idle excluded: the per-processor `kernel - idle` delta, summed, over the summed
+total delta. It is computed from the same deltas as the aggregate, so it is the
+kernel part of `aggregateTimeUtilizationPercent` and can never exceed it; a test
+holds it to that on a live machine.
+
+**Why it exists.** Windows Task Manager's CPU graph can show kernel times as a
+darker area under the utilization line, and so can the CPU page here, from this
+field rather than from anything averaged in the interface. Kernel time that stays
+high with little user time points at drivers, interrupts or heavy I/O rather than
+at a program's own work.
+
+---
+
 <a id="metric-dpc-and-interrupt-time"></a>
 ### Metric: DPC and interrupt time
 

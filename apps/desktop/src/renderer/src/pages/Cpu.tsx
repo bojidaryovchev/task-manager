@@ -1,58 +1,104 @@
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { formatFrequency, formatPercent } from '@task-manager/shared';
 import { Chart } from '../components/Chart.js';
 import { Field, Note, PageShell, Panel, Stat } from '../components/primitives.js';
 import { useTelemetry } from '../lib/hooks.js';
 import { telemetryStore } from '../lib/telemetry-store.js';
+import { PageMenu } from '../components/PageMenu.js';
+
+const KERNEL_TIMES_KEY = 'cpu.showKernelTimes';
+
+/** Remembered per window, like the other things a page lets you switch. */
+function useShowKernelTimes(): [boolean, (value: boolean) => void] {
+  const [value, setValue] = useState(() => {
+    try {
+      return localStorage.getItem(KERNEL_TIMES_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const set = (next: boolean): void => {
+    setValue(next);
+    try {
+      localStorage.setItem(KERNEL_TIMES_KEY, String(next));
+    } catch {
+      // Remembering it is a convenience; failing to changes nothing else.
+    }
+  };
+  return [value, set];
+}
 
 export function CpuPage(): React.JSX.Element {
   const brand = useTelemetry((s) => s?.cpu.topology.brandString ?? null);
+  const [kernelTimes, setKernelTimes] = useShowKernelTimes();
 
   return (
     <PageShell title="CPU" subtitle={brand ?? undefined}>
-      <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
-        <Panel title="Utilization" hint="Two different definitions, drawn together">
-          <Headline />
-          <div className="mt-3">
-            <Chart
-              height={180}
-              max={100}
-              series={[
-                {
-                  buffer: telemetryStore.system.get('cpuTimeUtilization'),
-                  color: 'var(--color-cpu)',
-                  fill: true,
-                },
-                {
-                  buffer: telemetryStore.system.get('cpuProcessorUtility'),
-                  color: 'var(--color-warn)',
-                },
-                {
-                  buffer: telemetryStore.system.get('cpuBusiest'),
-                  color: 'var(--color-chart-comparison)',
-                  dashed: true,
-                },
-              ]}
-            />
-          </div>
-          <Legend />
-          <Note>
-            The y-axis is fixed at 100%. Processor utility can exceed that on a CPU running
-            above its base clock, and is clipped by the axis rather than by the measurement —
-            the exact value is shown above and in the debug view.
-          </Note>
-        </Panel>
+      <PageMenu
+        title="CPU"
+        metrics={['cpuUtilization', 'cpuUtility', 'cpuBusiest', 'thermalZone']}
+        extra={[
+          { type: 'checkbox', id: 'kernel', label: 'Show kernel times', checked: kernelTimes },
+        ]}
+        onExtra={(id) => {
+          if (id === 'kernel') setKernelTimes(!kernelTimes);
+        }}
+      >
+        <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+          <Panel title="Utilization" hint="Two different definitions, drawn together">
+            <Headline />
+            <div className="mt-3">
+              <Chart
+                height={180}
+                max={100}
+                series={[
+                  {
+                    buffer: telemetryStore.system.get('cpuTimeUtilization'),
+                    color: 'var(--color-cpu)',
+                    fill: true,
+                  },
+                  // Kernel time is part of utilization, so its darker area always
+                  // sits inside the one above, as Windows Task Manager draws it.
+                  ...(kernelTimes
+                    ? [
+                        {
+                          buffer: telemetryStore.system.get('cpuKernel'),
+                          color: 'var(--color-accent-dim)',
+                          fill: 0.55,
+                        },
+                      ]
+                    : []),
+                  {
+                    buffer: telemetryStore.system.get('cpuProcessorUtility'),
+                    color: 'var(--color-warn)',
+                  },
+                  {
+                    buffer: telemetryStore.system.get('cpuBusiest'),
+                    color: 'var(--color-chart-comparison)',
+                    dashed: true,
+                  },
+                ]}
+              />
+            </div>
+            <Legend kernelTimes={kernelTimes} />
+            <Note>
+              The y-axis is fixed at 100%. Processor utility can exceed that on a CPU running
+              above its base clock, and is clipped by the axis rather than by the measurement —
+              the exact value is shown above and in the debug view.
+            </Note>
+          </Panel>
 
-        <Topology />
-      </div>
+          <Topology />
+        </div>
 
-      <div className="mt-4">
-        <PerProcessorGrid />
-      </div>
+        <div className="mt-4">
+          <PerProcessorGrid />
+        </div>
 
-      <div className="mt-4">
-        <ThermalZones />
-      </div>
+        <div className="mt-4">
+          <ThermalZones />
+        </div>
+      </PageMenu>
     </PageShell>
   );
 }
@@ -179,9 +225,10 @@ function Headline(): React.JSX.Element {
   );
 }
 
-function Legend(): React.JSX.Element {
+function Legend({ kernelTimes }: { kernelTimes: boolean }): React.JSX.Element {
   const items = [
     { color: 'var(--color-cpu)', label: 'Time utilization' },
+    ...(kernelTimes ? [{ color: 'var(--color-accent-dim)', label: 'Kernel time' }] : []),
     { color: 'var(--color-warn)', label: 'Processor utility (Task Manager)' },
     { color: 'var(--color-chart-comparison)', label: 'Busiest logical processor' },
   ];

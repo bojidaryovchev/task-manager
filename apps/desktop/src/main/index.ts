@@ -10,6 +10,7 @@ import {
   type StartupFailure,
 } from '@shared/ipc';
 import { readAppSettingsPatch } from '@shared/app-settings.js';
+import { readMenuItems, type MenuItemSpec } from '@shared/menu.js';
 import {
   isProcessKey,
   readProcessKeys,
@@ -270,6 +271,30 @@ function sendAppCommand(command: AppCommand): void {
   }
 }
 
+/**
+ * Show a menu a page described. Resolves once it closes with the chosen id,
+ * allowing for a click that lands just after the menu reports closing.
+ */
+function showPageMenu(window: BrowserWindow | null, items: MenuItemSpec[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    const template = items.map<Electron.MenuItemConstructorOptions>((item) =>
+      item.type === 'separator'
+        ? { type: 'separator' }
+        : {
+            type: item.type === 'checkbox' ? 'checkbox' : 'normal',
+            label: item.label,
+            checked: item.checked,
+            enabled: item.enabled,
+            click: () => resolve(item.id),
+          },
+    );
+    Menu.buildFromTemplate(template).popup({
+      window: window ?? undefined,
+      callback: () => setTimeout(() => resolve(null), 250),
+    });
+  });
+}
+
 /** Restart as administrator, asking Windows first. See elevation.ts. */
 function restartElevated(): void {
   void restartAsAdministrator({
@@ -344,6 +369,11 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
       valid,
       asAdministrator === true,
     );
+  });
+  ipcMain.handle(IpcChannel.ShowMenu, (event, items: unknown) => {
+    const valid = readMenuItems(items);
+    if (!valid) return null;
+    return showPageMenu(BrowserWindow.fromWebContents(event.sender), valid);
   });
   ipcMain.handle(IpcChannel.BrowseForProgram, async (event) => {
     const options: Electron.OpenDialogOptions = {

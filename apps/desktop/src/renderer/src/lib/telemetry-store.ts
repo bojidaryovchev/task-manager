@@ -18,6 +18,7 @@ export type SystemSeriesName =
   | 'cpuTimeUtilization'
   | 'cpuProcessorUtility'
   | 'cpuBusiest'
+  | 'cpuKernel'
   | 'memoryPercent'
   | 'memoryUsedBytes'
   | 'memoryCommittedBytes'
@@ -50,6 +51,7 @@ export class TelemetryStore {
       'cpuTimeUtilization',
       'cpuProcessorUtility',
       'cpuBusiest',
+      'cpuKernel',
       'memoryPercent',
       'memoryUsedBytes',
       'memoryCommittedBytes',
@@ -128,6 +130,7 @@ export class TelemetryStore {
       cpuTimeUtilization: snapshot.cpu.aggregateTimeUtilizationPercent,
       cpuProcessorUtility: snapshot.cpu.processorUtilityPercent,
       cpuBusiest: snapshot.cpu.busiestLogicalProcessorPercent,
+      cpuKernel: snapshot.cpu.aggregateKernelPercent,
       memoryPercent: snapshot.memory.physicalUtilizationPercent,
       memoryUsedBytes: snapshot.memory.usedPhysicalBytes,
       memoryCommittedBytes: snapshot.memory.committedBytes,

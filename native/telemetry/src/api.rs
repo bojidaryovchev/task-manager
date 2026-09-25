@@ -95,6 +95,7 @@ pub struct JsCpuSnapshot {
     pub average_logical_processor_percent: Option<f64>,
     pub aggregate_dpc_percent: Option<f64>,
     pub aggregate_interrupt_percent: Option<f64>,
+    pub aggregate_kernel_percent: Option<f64>,
     pub current_frequency_mhz: Option<f64>,
     pub per_logical_processor: Vec<JsLogicalProcessorSample>,
     pub topology: JsCpuTopology,
@@ -410,6 +411,7 @@ pub fn cpu_to_js(sample: &CpuSample, context: CpuConversionContext<'_>) -> JsCpu
         average_logical_processor_percent: sample.average_logical_processor_percent,
         aggregate_dpc_percent: sample.aggregate_dpc_percent,
         aggregate_interrupt_percent: sample.aggregate_interrupt_percent,
+        aggregate_kernel_percent: sample.aggregate_kernel_percent,
         current_frequency_mhz: sample.derived_current_frequency_mhz,
         per_logical_processor: sample
             .per_logical_processor

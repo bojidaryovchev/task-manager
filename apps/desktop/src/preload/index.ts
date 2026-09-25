@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { CollectorConfig, SystemSnapshot } from '@task-manager/telemetry-types';
 import { IpcChannel, type AppCommand, type TaskManagerApi } from '@shared/ipc';
 import type { AppSettingsView } from '@shared/app-settings';
+import type { MenuItemSpec } from '@shared/menu';
 import type { ProcessMenuRequest } from '@shared/process-actions';
 import type { WidgetSettings } from '@shared/widget';
 
@@ -74,6 +75,7 @@ const api: TaskManagerApi = {
   runNewTask: (command: string, asAdministrator: boolean) =>
     ipcRenderer.invoke(IpcChannel.RunNewTask, String(command), asAdministrator === true),
   browseForProgram: () => ipcRenderer.invoke(IpcChannel.BrowseForProgram),
+  showMenu: (items: MenuItemSpec[]) => ipcRenderer.invoke(IpcChannel.ShowMenu, items),
   onAppCommand: (listener: (command: AppCommand) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, command: AppCommand): void => {
       listener(command);

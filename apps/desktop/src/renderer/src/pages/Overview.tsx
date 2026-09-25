@@ -7,6 +7,7 @@ import {
 } from '@task-manager/shared';
 import { Chart } from '../components/Chart.js';
 import { Bar, Note, PageShell, Panel, Stat } from '../components/primitives.js';
+import { PageMenu } from '../components/PageMenu.js';
 import { useHostInfo, useTelemetry } from '../lib/hooks.js';
 import { telemetryStore } from '../lib/telemetry-store.js';
 
@@ -22,13 +23,15 @@ export function OverviewPage(): React.JSX.Element {
           : undefined
       }
     >
-      <div className="grid gap-4 xl:grid-cols-2">
-        <CpuCard />
-        <MemoryCard />
-        <GpuCard />
-        <DiskNetworkCard />
-      </div>
-      <PendingSubsystems />
+      <PageMenu title="Overview" metrics={['cpuUtilization', 'memoryPercent', 'gpu', 'diskRead', 'diskWrite', 'networkDown', 'networkUp']}>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <CpuCard />
+          <MemoryCard />
+          <GpuCard />
+          <DiskNetworkCard />
+        </div>
+        <PendingSubsystems />
+      </PageMenu>
     </PageShell>
   );
 }

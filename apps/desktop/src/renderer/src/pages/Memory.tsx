@@ -2,6 +2,7 @@ import type { MemorySnapshot } from '@task-manager/telemetry-types';
 import { formatBytes, formatPercent } from '@task-manager/shared';
 import { Chart } from '../components/Chart.js';
 import { Field, Note, PageShell, Panel, Stat } from '../components/primitives.js';
+import { PageMenu } from '../components/PageMenu.js';
 import { useTelemetry } from '../lib/hooks.js';
 import { telemetryStore } from '../lib/telemetry-store.js';
 
@@ -32,143 +33,145 @@ export function MemoryPage(): React.JSX.Element {
           : undefined
       }
     >
-      <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
-        <Panel title="Physical memory">
-          <div className="grid grid-cols-4 gap-4">
-            <Stat
-              label="In use"
-              value={formatBytes(memory.usedPhysicalBytes)}
-              accent="var(--color-memory)"
-              definition="Total usable physical memory minus available."
-            />
-            <Stat
-              label="Available"
-              value={formatBytes(memory.availablePhysicalBytes)}
-              definition="Free, zeroed and standby pages. Standby holds cached file data that can be reclaimed instantly."
-            />
-            <Stat
-              label="Cached"
-              value={formatBytes(memory.cachedBytes)}
-              definition="Standby plus modified pages — the same definition Task Manager uses."
-            />
-            <Stat
-              label="Utilization"
-              value={formatPercent(memory.physicalUtilizationPercent)}
-              definition="In use divided by total usable physical memory."
-            />
-          </div>
-
-          <div className="mt-4">
-            <Composition memory={memory} />
-          </div>
-
-          <div className="mt-4">
-            <Chart
-              height={150}
-              max={memory.totalPhysicalBytes}
-              series={[
-                {
-                  buffer: telemetryStore.system.get('memoryUsedBytes'),
-                  color: 'var(--color-memory)',
-                  fill: true,
-                },
-              ]}
-            />
-            <div className="mt-1 flex justify-between text-[11px] text-text-muted">
-              <span>0</span>
-              <span>{formatBytes(memory.totalPhysicalBytes)}</span>
-            </div>
-          </div>
-        </Panel>
-
-        <Panel title="Details" hint="Every value with its Windows source">
-          <div className="text-[12px]">
-            <Field
-              label="Installed"
-              value={formatBytes(installed)}
-              definition="GetPhysicallyInstalledSystemMemory — reads SMBIOS."
-            />
-            <Field
-              label="Usable"
-              value={formatBytes(memory.totalPhysicalBytes)}
-              definition="MEMORYSTATUSEX.ullTotalPhys"
-            />
-            {reserved !== undefined && reserved > 0 && (
-              <Field
-                label="Hardware reserved"
-                value={formatBytes(reserved)}
-                definition="Installed minus usable: memory claimed by firmware and devices."
+      <PageMenu title="Memory" metrics={['memoryPercent', 'memoryUsed']}>
+        <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
+          <Panel title="Physical memory">
+            <div className="grid grid-cols-4 gap-4">
+              <Stat
+                label="In use"
+                value={formatBytes(memory.usedPhysicalBytes)}
+                accent="var(--color-memory)"
+                definition="Total usable physical memory minus available."
               />
-            )}
-            <Field
-              label="Available"
-              value={formatBytes(memory.availablePhysicalBytes)}
-              definition="MEMORYSTATUSEX.ullAvailPhys"
-            />
-            <Field
-              label="Standby"
-              value={formatBytes(memory.standbyBytes)}
-              definition="SystemMemoryListInformation, summed over cache priorities 0-7."
-            />
-            <Field
-              label="Modified"
-              value={formatBytes(memory.modifiedBytes)}
-              definition="Modified plus modified-no-write pages, awaiting write-back."
-            />
-            <Field
-              label="Free"
-              value={formatBytes(memory.freeBytes)}
-              definition="Free plus zeroed page lists."
-            />
-            <Field
-              label="Committed"
-              value={formatBytes(memory.committedBytes)}
-              definition="GetPerformanceInfo CommitTotal x page size."
-            />
-            <Field
-              label="Commit limit"
-              value={formatBytes(memory.commitLimitBytes)}
-              definition="RAM plus the current page file size."
-            />
-            <Field
-              label="Commit peak"
-              value={formatBytes(memory.commitPeakBytes)}
-              definition="Highest commit charge since boot."
-            />
-            <Field
-              label="Paged pool"
-              value={formatBytes(memory.pagedPoolBytes)}
-              definition="Kernel memory that can be paged out."
-            />
-            <Field
-              label="Non-paged pool"
-              value={formatBytes(memory.nonPagedPoolBytes)}
-              definition="Kernel memory that must stay resident."
-            />
-            <Field
-              label="Page file"
-              value={
-                memory.pageFileTotalBytes === undefined
-                  ? '—'
-                  : `${formatBytes(memory.pageFileUsedBytes)} / ${formatBytes(memory.pageFileTotalBytes)}`
-              }
-              definition="Commit limit minus RAM gives the page file size; usage is commit beyond what RAM can hold."
-            />
-            <Field label="Page size" value={formatBytes(memory.pageSizeBytes)} />
-            <Field
-              label="Memory load"
-              value={formatPercent(memory.memoryLoadPercent, 0)}
-              definition="MEMORYSTATUSEX.dwMemoryLoad, kept as a cross-check on our own percentage."
-            />
-          </div>
-        </Panel>
-      </div>
+              <Stat
+                label="Available"
+                value={formatBytes(memory.availablePhysicalBytes)}
+                definition="Free, zeroed and standby pages. Standby holds cached file data that can be reclaimed instantly."
+              />
+              <Stat
+                label="Cached"
+                value={formatBytes(memory.cachedBytes)}
+                definition="Standby plus modified pages — the same definition Task Manager uses."
+              />
+              <Stat
+                label="Utilization"
+                value={formatPercent(memory.physicalUtilizationPercent)}
+                definition="In use divided by total usable physical memory."
+              />
+            </div>
 
-      <Note>
-        Committed memory can exceed physical memory: commit is a promise of backing store, not
-        of resident pages. Commit charge above the commit limit is what makes Windows refuse
-        allocations, which is a different failure from running out of RAM.
-      </Note>
+            <div className="mt-4">
+              <Composition memory={memory} />
+            </div>
+
+            <div className="mt-4">
+              <Chart
+                height={150}
+                max={memory.totalPhysicalBytes}
+                series={[
+                  {
+                    buffer: telemetryStore.system.get('memoryUsedBytes'),
+                    color: 'var(--color-memory)',
+                    fill: true,
+                  },
+                ]}
+              />
+              <div className="mt-1 flex justify-between text-[11px] text-text-muted">
+                <span>0</span>
+                <span>{formatBytes(memory.totalPhysicalBytes)}</span>
+              </div>
+            </div>
+          </Panel>
+
+          <Panel title="Details" hint="Every value with its Windows source">
+            <div className="text-[12px]">
+              <Field
+                label="Installed"
+                value={formatBytes(installed)}
+                definition="GetPhysicallyInstalledSystemMemory — reads SMBIOS."
+              />
+              <Field
+                label="Usable"
+                value={formatBytes(memory.totalPhysicalBytes)}
+                definition="MEMORYSTATUSEX.ullTotalPhys"
+              />
+              {reserved !== undefined && reserved > 0 && (
+                <Field
+                  label="Hardware reserved"
+                  value={formatBytes(reserved)}
+                  definition="Installed minus usable: memory claimed by firmware and devices."
+                />
+              )}
+              <Field
+                label="Available"
+                value={formatBytes(memory.availablePhysicalBytes)}
+                definition="MEMORYSTATUSEX.ullAvailPhys"
+              />
+              <Field
+                label="Standby"
+                value={formatBytes(memory.standbyBytes)}
+                definition="SystemMemoryListInformation, summed over cache priorities 0-7."
+              />
+              <Field
+                label="Modified"
+                value={formatBytes(memory.modifiedBytes)}
+                definition="Modified plus modified-no-write pages, awaiting write-back."
+              />
+              <Field
+                label="Free"
+                value={formatBytes(memory.freeBytes)}
+                definition="Free plus zeroed page lists."
+              />
+              <Field
+                label="Committed"
+                value={formatBytes(memory.committedBytes)}
+                definition="GetPerformanceInfo CommitTotal x page size."
+              />
+              <Field
+                label="Commit limit"
+                value={formatBytes(memory.commitLimitBytes)}
+                definition="RAM plus the current page file size."
+              />
+              <Field
+                label="Commit peak"
+                value={formatBytes(memory.commitPeakBytes)}
+                definition="Highest commit charge since boot."
+              />
+              <Field
+                label="Paged pool"
+                value={formatBytes(memory.pagedPoolBytes)}
+                definition="Kernel memory that can be paged out."
+              />
+              <Field
+                label="Non-paged pool"
+                value={formatBytes(memory.nonPagedPoolBytes)}
+                definition="Kernel memory that must stay resident."
+              />
+              <Field
+                label="Page file"
+                value={
+                  memory.pageFileTotalBytes === undefined
+                    ? '—'
+                    : `${formatBytes(memory.pageFileUsedBytes)} / ${formatBytes(memory.pageFileTotalBytes)}`
+                }
+                definition="Commit limit minus RAM gives the page file size; usage is commit beyond what RAM can hold."
+              />
+              <Field label="Page size" value={formatBytes(memory.pageSizeBytes)} />
+              <Field
+                label="Memory load"
+                value={formatPercent(memory.memoryLoadPercent, 0)}
+                definition="MEMORYSTATUSEX.dwMemoryLoad, kept as a cross-check on our own percentage."
+              />
+            </div>
+          </Panel>
+        </div>
+
+        <Note>
+          Committed memory can exceed physical memory: commit is a promise of backing store, not
+          of resident pages. Commit charge above the commit limit is what makes Windows refuse
+          allocations, which is a different failure from running out of RAM.
+        </Note>
+      </PageMenu>
     </PageShell>
   );
 }

@@ -162,6 +162,7 @@ export interface JsCpuSnapshot {
   averageLogicalProcessorPercent?: number
   aggregateDpcPercent?: number
   aggregateInterruptPercent?: number
+  aggregateKernelPercent?: number
   currentFrequencyMhz?: number
   perLogicalProcessor: Array<JsLogicalProcessorSample>
   topology: JsCpuTopology

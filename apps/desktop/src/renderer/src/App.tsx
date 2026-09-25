@@ -17,6 +17,7 @@ import { HistoryPage } from './pages/History.js';
 import { RunTaskDialog } from './components/RunTaskDialog.js';
 import { PausedBanner } from './components/PausedBanner.js';
 import { SettingsPage } from './pages/Settings.js';
+import { NavigationContext } from './lib/navigation.js';
 
 export function App(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('overview');
@@ -84,27 +85,29 @@ export function App(): React.JSX.Element {
   }
 
   return (
-    <div className="flex h-full w-full bg-surface-0">
-      <Sidebar current={page} onNavigate={setPage} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <StartupBanner />
-        <PausedBanner />
-        {page === 'overview' && <OverviewPage />}
-        {page === 'cpu' && <CpuPage />}
-        {page === 'memory' && <MemoryPage />}
-        {page === 'processes' && <ProcessesPage onRunNewTask={() => setRunTask(true)} />}
-        {page === 'applications' && <ApplicationsPage />}
-        {page === 'gpu' && <GpuPage />}
-        {page === 'disk' && <DiskPage />}
-        {page === 'network' && <NetworkPage />}
-        {page === 'history' && <HistoryPage />}
-        {page === 'widget' && <WidgetSettingsPage />}
-        {page === 'export' && <ExportPage />}
-        {page === 'settings' && <SettingsPage />}
-        {page === 'debug' && <DebugPage />}
-      </main>
-      {runTask && <RunTaskDialog onClose={() => setRunTask(false)} />}
-    </div>
+    <NavigationContext.Provider value={setPage}>
+      <div className="flex h-full w-full bg-surface-0">
+        <Sidebar current={page} onNavigate={setPage} />
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <StartupBanner />
+          <PausedBanner />
+          {page === 'overview' && <OverviewPage />}
+          {page === 'cpu' && <CpuPage />}
+          {page === 'memory' && <MemoryPage />}
+          {page === 'processes' && <ProcessesPage onRunNewTask={() => setRunTask(true)} />}
+          {page === 'applications' && <ApplicationsPage />}
+          {page === 'gpu' && <GpuPage />}
+          {page === 'disk' && <DiskPage />}
+          {page === 'network' && <NetworkPage />}
+          {page === 'history' && <HistoryPage />}
+          {page === 'widget' && <WidgetSettingsPage />}
+          {page === 'export' && <ExportPage />}
+          {page === 'settings' && <SettingsPage />}
+          {page === 'debug' && <DebugPage />}
+        </main>
+        {runTask && <RunTaskDialog onClose={() => setRunTask(false)} />}
+      </div>
+    </NavigationContext.Provider>
   );
 }
 

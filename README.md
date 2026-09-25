@@ -190,6 +190,11 @@ not documented — or documented and not produced — fails `pnpm typecheck`.
 
 ## Currently supported metrics
 
+Every performance page (Overview, CPU, Memory, GPU, Disk, Network) has a
+right-click menu to copy the page as text, show its metrics in the desktop widget,
+or open History; on the CPU page it also offers Show kernel times, as Windows Task
+Manager does, drawn from a machine-wide kernel share measured in Rust.
+
 **CPU** — aggregate time utilization, processor utility (Task Manager's metric),
 busiest logical processor, average logical processor, per-logical-processor
 utilization with kernel/user/DPC/interrupt breakdown, machine-wide DPC and

@@ -89,6 +89,10 @@ pub struct CpuSample {
     /// Machine-wide share of time spent servicing interrupts. Also a subset of
     /// kernel time and also not charged to any process.
     pub aggregate_interrupt_percent: Option<f64>,
+    /// Machine-wide share of time spent busy in kernel mode, idle excluded: the
+    /// part of `aggregate_time_utilization_percent` that is kernel time, which
+    /// is what Windows Task Manager's "Show kernel times" draws.
+    pub aggregate_kernel_percent: Option<f64>,
     pub busiest_logical_processor_index: Option<usize>,
     pub busiest_logical_processor_percent: Option<f64>,
     pub per_logical_processor: Vec<LogicalProcessorSample>,
@@ -262,6 +266,7 @@ impl CpuCollector {
         let mut sum_total = 0.0f64;
         let mut sum_idle = 0.0f64;
         let mut sum_kernel = 0.0f64;
+        let mut sum_kernel_busy = 0.0f64;
         let mut sum_user = 0.0f64;
         let mut sum_dpc = 0.0f64;
         let mut sum_interrupt = 0.0f64;
@@ -321,6 +326,7 @@ impl CpuCollector {
             sum_interrupt += interrupt.max(0.0);
             sum_idle += idle.max(0.0);
             sum_kernel += kernel;
+            sum_kernel_busy += (kernel - idle).max(0.0);
             sum_user += user;
         }
 
@@ -370,6 +376,8 @@ impl CpuCollector {
         sample.aggregate_dpc_percent = Some((sum_dpc / sum_total * 100.0).clamp(0.0, 100.0));
         sample.aggregate_interrupt_percent =
             Some((sum_interrupt / sum_total * 100.0).clamp(0.0, 100.0));
+        sample.aggregate_kernel_percent =
+            Some((sum_kernel_busy / sum_total * 100.0).clamp(0.0, 100.0));
         sample.busiest_logical_processor_index = busiest.map(|b| b.0);
         sample.busiest_logical_processor_percent = busiest.map(|b| b.1);
         sample.per_logical_processor = per_processor;
@@ -529,5 +537,24 @@ mod tests {
         assert_eq!(process_machine_percent(100.0, -5.0, 24), None);
         assert_eq!(process_machine_percent(100.0, 500.0, 0), None);
         assert_eq!(process_machine_percent(-1.0, 500.0, 24), None);
+    }
+
+    #[test]
+    fn kernel_time_is_a_part_of_utilization_never_more() {
+        // Kernel time excluding idle is busy time minus user time, so on a live
+        // machine it can never exceed the utilization it is part of.
+        let mut collector = super::CpuCollector::new();
+        collector.sample(0.0, super::PdhCpuSample::default());
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let sample = collector.sample(200.0, super::PdhCpuSample::default());
+        if sample.debug.discarded {
+            return;
+        }
+        let kernel = sample.aggregate_kernel_percent.expect("kernel share");
+        let total = sample
+            .aggregate_time_utilization_percent
+            .expect("utilization");
+        assert!((0.0..=100.0).contains(&kernel));
+        assert!(kernel <= total + 1e-9, "kernel {kernel} > total {total}");
     }
 }

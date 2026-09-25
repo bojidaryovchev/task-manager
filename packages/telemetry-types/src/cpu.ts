@@ -157,6 +157,13 @@ export interface CpuSnapshot {
    */
   aggregateInterruptPercent?: number;
   /**
+   * Machine-wide share of time spent busy in kernel mode, idle excluded, 0..100:
+   * the part of `aggregateTimeUtilizationPercent` that is kernel time. Computed
+   * from the same per-processor deltas, so it can never exceed it. What Windows
+   * Task Manager's "Show kernel times" draws.
+   */
+  aggregateKernelPercent?: number;
+  /**
    * `baseFrequencyMhz * processorPerformancePercent / 100` - how Task Manager
    * derives the displayed speed. Absent without PDH.
    */

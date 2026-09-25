@@ -6,6 +6,7 @@ import type {
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
 import type { AppSettingsView } from './app-settings.js';
+import type { MenuItemSpec } from './menu.js';
 import type { ProcessMenuCommand, ProcessMenuRequest } from './process-actions.js';
 import type { ProcessColumnId } from './process-columns.js';
 import type { WidgetSettings } from './widget.js';
@@ -77,6 +78,8 @@ export const IpcChannel = {
   GetProcessColumns: 'process:getColumns',
   /** invoke: () => ProcessColumnId[] - show the column menu; resolves with the choice */
   ShowColumnMenu: 'process:showColumnMenu',
+  /** invoke: (items: MenuItemSpec[]) => string | null - a page's own menu */
+  ShowMenu: 'app:showMenu',
   /** invoke: (command, asAdministrator) => void - Run new task */
   RunNewTask: 'process:runNewTask',
   /** invoke: () => string | null - pick a program for Run new task */
@@ -296,6 +299,11 @@ export interface TaskManagerApi {
    * main process.
    */
   runNewTask(command: string, asAdministrator: boolean): Promise<void>;
+  /**
+   * Show a menu the page describes, at the pointer. Resolves once it closes,
+   * with the id of the item chosen, or null.
+   */
+  showMenu(items: MenuItemSpec[]): Promise<string | null>;
   /** Choose a program with the Windows open dialog. Null when dismissed. */
   browseForProgram(): Promise<string | null>;
   /** Subscribe to commands from elsewhere, such as the tray. */
