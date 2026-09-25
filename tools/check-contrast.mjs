@@ -116,12 +116,14 @@ const CHECKS = [
   ['Tray CPU bar on its track', '--color-cpu', trayTrack, AA_LARGE],
   ['Tray memory bar on its track', '--color-memory', trayTrack, AA_LARGE],
   ['Tray GPU bar on its track', '--color-gpu', trayTrack, AA_LARGE],
-  // The white separators have to divide the columns from one another.
-  ['Tray track against its separators', '--color-chart-grid', color('--color-text-primary'), AA_LARGE],
-  // The outline is what marks the icon's edge on either taskbar: a white
-  // margin disappears into a light one.
-  ['Tray outline on a dark taskbar', '--color-text-muted', darkTaskbar, AA_LARGE],
-  ['Tray outline on a light taskbar', '--color-text-muted', lightTaskbar, AA_LARGE],
+  // There is no outline, so the taskbar itself surrounds the bars. On a dark
+  // taskbar the tracks recede and the fills carry the icon; on a light one the
+  // tracks mark out each bar. What going without an outline gives up: a bar at
+  // exactly 100% has no track above it, and meets a light taskbar at 2.4-2.9:1.
+  ['Tray CPU bar on a dark taskbar', '--color-cpu', darkTaskbar, AA_LARGE],
+  ['Tray memory bar on a dark taskbar', '--color-memory', darkTaskbar, AA_LARGE],
+  ['Tray GPU bar on a dark taskbar', '--color-gpu', darkTaskbar, AA_LARGE],
+  ['Tray track on a light taskbar', '--color-chart-grid', lightTaskbar, AA_LARGE],
 ];
 
 let failures = 0;

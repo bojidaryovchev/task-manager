@@ -34,20 +34,12 @@ import { busiestHardwareAdapter } from '@task-manager/shared';
  * Colours, each taken from a design token so the tray matches the rest of the
  * application. `TRAY_PALETTE_TOKENS` names the token, and a test fails if the
  * two ever drift apart.
+ *
+ * There is no outline and nothing between the bars: everything that is not a
+ * bar is transparent, so the icon is the three bars and the taskbar shows
+ * through the rest.
  */
 export const TRAY_PALETTE = {
-  /**
-   * The outline. A mid grey, because it has to separate the tile from the
-   * taskbar behind it whether that taskbar is dark or light: it holds at least
-   * 3:1 against both Windows' dark and light base colours.
-   */
-  frame: '#838c98',
-  /**
-   * The lines between the bars and the margin around them: the application's
-   * white. The bars themselves sit on their own dark tracks, so this changes
-   * how the columns are divided without touching what the bars say.
-   */
-  separator: '#e6eaf0',
   /** The unfilled part of each bar: how much room there is left. */
   track: '#2b323d',
   cpu: '#4a9eff',
@@ -56,8 +48,6 @@ export const TRAY_PALETTE = {
 } as const;
 
 export const TRAY_PALETTE_TOKENS: Record<keyof typeof TRAY_PALETTE, string> = {
-  frame: '--color-text-muted',
-  separator: '--color-text-primary',
   track: '--color-chart-grid',
   cpu: '--color-cpu',
   memory: '--color-memory',
@@ -110,10 +100,6 @@ export function trayIconSize(scaleFactor: number): number {
 
 export interface MeterLayout {
   size: number;
-  /** Outline thickness. */
-  frame: number;
-  /** Radius of the transparent cut at each corner. */
-  corner: number;
   /** First row of the bars. */
   trackTop: number;
   /** Rows available to each bar: its full-scale height. */
@@ -124,53 +110,40 @@ export interface MeterLayout {
 /**
  * Where the bars go at a given size.
  *
- * The bars have to be the same width and the icon has to be symmetric, and at
- * these sizes one stray pixel is visible - 16 pixels split three ways does not
- * divide evenly unless the gaps and margins are chosen to make it. So a small
- * set of arrangements is tried and the widest bars that still come out
- * symmetric win; on a tie, the one with a margin inside the outline, which
- * reads less cramped.
+ * The bars keep a small margin clear of the icon's edge, one pixel at 100%
+ * scaling and in proportion above it, as a drawn 16-pixel icon does. They have
+ * to be the same width and the icon has to be symmetric, and at these sizes
+ * one stray pixel is visible - 16 pixels split three ways does not divide
+ * evenly unless the gaps are chosen to make it. So two gaps are tried and the
+ * widest bars that still come out symmetric win; on a tie, the narrower gap.
  */
 export function meterLayout(size: number, count: number): MeterLayout {
-  const frame = Math.max(1, Math.floor(size / 16));
-  const arrangements = [
-    { inset: frame, gap: frame },
-    { inset: frame, gap: frame + 1 },
-    { inset: 0, gap: frame },
-    { inset: 0, gap: frame + 1 },
-  ];
+  const margin = Math.max(1, Math.floor(size / 16));
+  const available = size - 2 * margin;
 
-  type Arrangement = { inset: number; gap: number; width: number; spare: number };
+  type Arrangement = { gap: number; width: number; spare: number };
   let best: Arrangement | null = null;
   let fallback: Arrangement | null = null;
-  for (const { inset, gap } of arrangements) {
-    const available = size - 2 * frame - 2 * inset;
+  for (const gap of [margin, margin + 1]) {
     const width = Math.floor((available - (count - 1) * gap) / count);
     if (width < 2) continue;
     const spare = available - (count * width + (count - 1) * gap);
-    const candidate = { inset, gap, width, spare };
+    const candidate = { gap, width, spare };
     fallback ??= candidate;
     if (spare % 2 !== 0) continue;
     if (best === null || width > best.width) best = candidate;
   }
   // Every size in use has a symmetric arrangement; this only matters for an
   // implausible size, where a slightly lopsided icon beats no icon.
-  const chosen = best ?? fallback ?? { inset: 0, gap: 1, width: 1, spare: 0 };
+  const chosen = best ?? fallback ?? { gap: 1, width: 1, spare: 0 };
 
-  const left = frame + chosen.inset + Math.floor(chosen.spare / 2);
+  // Pixels the bars cannot use widen the side margins, equally.
+  const left = margin + Math.floor(chosen.spare / 2);
   const bars = Array.from({ length: count }, (_, index) => ({
     x: left + index * (chosen.width + chosen.gap),
     width: chosen.width,
   }));
-  const trackTop = frame + chosen.inset;
-  return {
-    size,
-    frame,
-    corner: 2 * frame,
-    trackTop,
-    trackHeight: size - 2 * trackTop,
-    bars,
-  };
+  return { size, trackTop: margin, trackHeight: size - 2 * margin, bars };
 }
 
 export interface MeterFrame {
@@ -202,21 +175,10 @@ export function renderTrayMeter(readings: TrayReadings, size: number): MeterFram
   if (readings.gpu !== null) series.push({ value: readings.gpu, colour: TRAY_PALETTE.gpu });
 
   const layout = meterLayout(size, series.length);
+  // Starts as zeroes: transparent, which in premultiplied alpha means every
+  // channel is zero, not merely alpha. Only the bars are painted over it.
   const pixels = Buffer.alloc(size * size * 4);
-  const frameColour = bgra(TRAY_PALETTE.frame);
-  const separatorColour = bgra(TRAY_PALETTE.separator);
   const trackColour = bgra(TRAY_PALETTE.track);
-
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      // Left as zeroes: transparent, which in premultiplied alpha means every
-      // channel is zero, not merely alpha.
-      if (outsideRoundedCorner(x, y, size, layout.corner)) continue;
-      const edge =
-        x < layout.frame || y < layout.frame || x >= size - layout.frame || y >= size - layout.frame;
-      paint(pixels, size, x, y, edge ? frameColour : separatorColour);
-    }
-  }
 
   const fills = series.map((entry) => fillRows(entry.value, layout.trackHeight));
   const bottom = layout.trackTop + layout.trackHeight;
@@ -248,15 +210,6 @@ export function trayTooltip(readings: TrayReadings): string {
 
 function percent(value: number | undefined): string {
   return value === undefined || !Number.isFinite(value) ? 'n/a' : `${Math.round(value)}%`;
-}
-
-/** Whether a pixel falls in the transparent cut at a rounded corner. */
-function outsideRoundedCorner(x: number, y: number, size: number, radius: number): boolean {
-  const cx = x < radius ? radius : x >= size - radius ? size - radius : null;
-  const cy = y < radius ? radius : y >= size - radius ? size - radius : null;
-  if (cx === null || cy === null) return false;
-  // Distance from the pixel's centre to the centre of the corner's arc.
-  return Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > radius;
 }
 
 function bgra(hex: string): [number, number, number, number] {

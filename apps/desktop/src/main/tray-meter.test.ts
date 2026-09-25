@@ -59,19 +59,22 @@ describe('layout', () => {
         expect(leftMargin).toBe(rightMargin);
         expect(layout.trackTop).toBe(size - (layout.trackTop + layout.trackHeight));
 
-        // Bars sit inside the outline.
-        expect(first.x).toBeGreaterThanOrEqual(layout.frame);
-        expect(layout.trackTop).toBeGreaterThanOrEqual(layout.frame);
+        // Bars keep clear of every edge.
+        expect(first.x).toBeGreaterThanOrEqual(1);
+        expect(layout.trackTop).toBeGreaterThanOrEqual(1);
       });
     }
   }
 
   it('gives each bar the most room the size allows', () => {
-    // At 16px three 4px bars with 1px gaps fill the inside of the outline
-    // exactly; anything narrower would be wasting the one resource there is.
+    // At 16px three 4px bars with 1px gaps fill everything inside the
+    // one-pixel margin exactly; anything narrower would be wasting the one
+    // resource there is.
     expect(meterLayout(16, 3).bars.map((bar) => bar.width)).toEqual([4, 4, 4]);
-    // 150% scaling, which is what the development machine runs at.
     expect(meterLayout(24, 3).bars.map((bar) => bar.width)).toEqual([6, 6, 6]);
+    // 250% scaling, which is what the development machine runs at: measured
+    // there as a 40-pixel icon on the real taskbar.
+    expect(meterLayout(40, 3).bars.map((bar) => bar.width)).toEqual([10, 10, 10]);
   });
 });
 
@@ -131,19 +134,29 @@ describe('the drawn icon', () => {
     }
   });
 
-  it('rounds its corners and outlines its edge', () => {
-    const size = 24;
-    const { pixels } = renderTrayMeter(EMPTY, size);
-    for (const [x, y] of [
-      [0, 0],
-      [size - 1, 0],
-      [0, size - 1],
-      [size - 1, size - 1],
-    ]) {
-      expect(pixel(pixels, size, x!, y!)).toEqual([0, 0, 0, 0]);
+  it('draws the bars and nothing else: no outline, no lines between them', () => {
+    // Everything that is not a bar is transparent, so the taskbar shows through
+    // around and between the bars instead of a drawn line.
+    const cases: TrayReadings[] = [FULL, EMPTY, { cpu: 10, memory: 20, gpu: null }];
+    const wrong: string[] = [];
+    for (const size of SIZES) {
+      for (const readings of cases) {
+        const { pixels } = renderTrayMeter(readings, size);
+        const layout = meterLayout(size, readings.gpu === null ? 2 : 3);
+        for (let y = 0; y < size; y += 1) {
+          for (let x = 0; x < size; x += 1) {
+            const inBar =
+              y >= layout.trackTop &&
+              y < layout.trackTop + layout.trackHeight &&
+              layout.bars.some((bar) => x >= bar.x && x < bar.x + bar.width);
+            if (pixel(pixels, size, x, y)[3] !== (inBar ? 255 : 0)) {
+              wrong.push(`${size}px (${x},${y})`);
+            }
+          }
+        }
+      }
     }
-    expect(pixel(pixels, size, size / 2, 0)).toEqual(bytes(TRAY_PALETTE.frame));
-    expect(pixel(pixels, size, 0, size / 2)).toEqual(bytes(TRAY_PALETTE.frame));
+    expect(wrong).toEqual([]);
   });
 
   it('draws the exact number of filled rows from the bottom up', () => {
