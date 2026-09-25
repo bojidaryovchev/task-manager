@@ -116,6 +116,16 @@ goes back to the primary display's top-right corner. Monitors get unplugged and
 scaling changes move work areas, and a widget you cannot reach is worse than one
 in the wrong place.
 
+**Right-clicks reach the page.** Unless it is locked, the whole widget is a
+drag region, which Windows treats as a title bar: a right-click there is a
+right-click on the caption, Chromium shows Windows' own window menu, and the
+page never hears it. The widget declines that menu (`system-context-menu`), and
+Electron then hands the click to the page instead (`HandleMouseEvent` in
+`electron_desktop_window_tree_host_win.cc`), which shows the widget's menu, or
+on a Top consumers row, that process's menu. Checked on an off-screen test
+widget by posting it the messages a caption right-click produces: the row
+hit-tests as `HTCAPTION`, and the page receives `contextmenu` on it.
+
 **Click-through has a guaranteed way back.** An always-on-top frameless window
 that ignores the mouse cannot be right-clicked, so the tray menu — which is
 built from the same template as the widget's own context menu — can always turn
@@ -569,6 +579,16 @@ every five seconds while the process list is being collected, and the collector
 takes the latest reading. A process is credited with services only if it was
 created before the list was read, so a recycled PID cannot inherit them.
 
+### From the widget
+
+The rows of the Top consumers layout have the process menu too, less what needs
+a page: Set affinity draws its dialog on the Processes page, and Go to parent
+selects a row there. The widget offers Show in Task Manager instead, which opens
+the Processes page with the process selected. Its questions and reports have no
+owner window. A message box is centred on its owner
+(`TDF_POSITION_RELATIVE_TO_WINDOW`), and the widget is small and usually against
+an edge of the screen; one without an owner is centred on the monitor.
+
 ### Holding Ctrl
 
 As in Windows Task Manager, holding Ctrl freezes the Processes and Applications
@@ -595,6 +615,19 @@ the CPU page therefore adds 24 canvas draws, not 24 React subtree renders.
 exist in the DOM, so the cost of a snapshot is proportional to viewport height
 rather than to process count. Rows are keyed by process identity, so React reuses
 DOM nodes as the sort order changes.
+
+**The list does not scroll itself.** Chromium's scroll anchoring keeps an element
+it has picked as an anchor at the same place on screen by changing the scroll
+position. In a list re-sorted by live values on every sample the anchor moves
+every time, and the list followed it: scrolled down and left alone, the process
+list drifted from 2290 px to 1522 px in eight seconds. Anchoring is off
+throughout (`overflow-anchor: none`), and the same list then held still.
+
+**A row gone to stays in view.** Going to a row, with Go to parent or the
+widget's Show in Task Manager, centres it and then keeps it where it landed
+while samples re-sort the list, until the user scrolls or selects something
+else. Scrolled only as far as its edge, one sample's reordering was enough to
+move it out of sight again.
 
 **History buffers are fixed-capacity.** `RingBuffer` allocates once and
 overwrites in place. A chart costs a constant amount of memory no matter how long

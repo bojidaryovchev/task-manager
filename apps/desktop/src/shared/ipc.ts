@@ -105,7 +105,10 @@ export type IpcChannelName = (typeof IpcChannel)[keyof typeof IpcChannel];
  * Something the main window's page should do, asked for from elsewhere: the
  * tray menu, for one.
  */
-export type AppCommand = { kind: 'runNewTask' };
+export type AppCommand =
+  | { kind: 'runNewTask' }
+  /** Open the Processes page with this process selected, by its key. */
+  | { kind: 'showProcess'; key: string };
 
 /** Where history is stored and whether it is running. */
 export interface HistoryStatus {

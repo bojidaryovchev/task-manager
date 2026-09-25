@@ -56,6 +56,8 @@ export interface ProcessActionsHost {
    * Absent until the application can do it.
    */
   restartElevated?: () => void;
+  /** Open the main window on a process's row, for the widget's menu. */
+  showProcess?: (key: string) => void;
 }
 
 /**
@@ -101,7 +103,15 @@ export class ProcessActions {
    * Show the menu for what a page has selected. Resolves, once the menu has
    * closed, with anything the page itself has to do.
    */
-  showMenu(window: BrowserWindow | null, request: ProcessMenuRequest): Promise<ProcessMenuCommand> {
+  showMenu(
+    menuWindow: BrowserWindow | null,
+    request: ProcessMenuRequest,
+  ): Promise<ProcessMenuCommand> {
+    // Questions and reports are modal to the window the menu came from, except
+    // the widget's. A message box with an owner is centred on it, and the
+    // widget is small and usually against an edge of the screen; one without
+    // is centred on the monitor (TDF_POSITION_RELATIVE_TO_WINDOW).
+    const window = request.context === 'widget' ? null : menuWindow;
     const native = this.#host.native();
     const processes = this.#processes();
     const byKey = new Map(processes.map((process) => [process.key, process]));
@@ -146,6 +156,7 @@ export class ProcessActions {
         elevated: this.#host.elevated(),
       },
       {
+        showInTaskManager: () => this.#host.showProcess?.(representative.key),
         end: () =>
           void this.#exclusive('end', () =>
             this.#end(window, endKind, chosen, request.applicationName),
@@ -195,7 +206,7 @@ export class ProcessActions {
     );
 
     Menu.buildFromTemplate(template).popup({
-      window: window ?? undefined,
+      window: menuWindow ?? undefined,
       callback: () => setTimeout(() => resolve(null), MENU_SETTLE_MS),
     });
     return chosenCommand;

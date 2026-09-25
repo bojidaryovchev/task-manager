@@ -78,6 +78,7 @@ function target(processOverrides: Partial<ProcessSnapshot> = {}, stateOverrides:
 
 function handlers(): ProcessMenuHandlers {
   return {
+    showInTaskManager: vi.fn(),
     end: vi.fn(),
     endTree: vi.fn(),
     closeWindows: vi.fn(),
@@ -197,6 +198,44 @@ describe('the process menu', () => {
     const copy = item(menu, 'Copy').submenu as MenuItemConstructorOptions[];
     item(copy, 'PID').click?.({} as never, undefined, {} as never);
     expect(calls.copy).toHaveBeenCalledWith('4242');
+  });
+});
+
+describe('the menu in the widget', () => {
+  const widget = (overrides: Partial<ProcessMenuModel> = {}): MenuItemConstructorOptions[] =>
+    buildProcessMenu(
+      model([target({}, { affinity: [0, 1], processors: [0, 1] })], {
+        context: 'widget',
+        ...overrides,
+      }),
+      handlers(),
+    );
+
+  it('leads with Show in Task Manager, and only there', () => {
+    expect(labels(widget())[0]).toBe('Show in Task Manager');
+    expect(labels(buildProcessMenu(model([target()]), handlers()))).not.toContain(
+      'Show in Task Manager',
+    );
+  });
+
+  it('leaves out what needs a page: the affinity dialog and going to the parent', () => {
+    const menu = widget({ parent: process({ name: 'explorer.exe' }) });
+    expect(labels(menu)).not.toContain('Set affinity…');
+    expect(labels(menu)).not.toContain('Go to parent (explorer.exe)');
+    expect(labels(menu)).toContain('Set priority');
+    expect(labels(menu)).toContain('Efficiency mode');
+  });
+
+  it('shows no Delete key, which the widget does not handle', () => {
+    expect(item(widget(), 'End task').accelerator).toBeUndefined();
+  });
+
+  it('does not offer to show a process that has gone', () => {
+    const menu = buildProcessMenu(
+      model([target({ name: 'gone.exe' }, { status: 'notRunning' })], { context: 'widget' }),
+      handlers(),
+    );
+    expect(labels(menu)).toEqual(['gone.exe is no longer running', 'Copy']);
   });
 });
 

@@ -58,6 +58,13 @@ describe('menu requests', () => {
     ).toEqual({ keys: ['8:1'], context: 'applications', applicationName: 'Chrome' });
   });
 
+  it('accepts a request from the widget', () => {
+    expect(readProcessMenuRequest({ keys: ['8:1'], context: 'widget' })).toEqual({
+      keys: ['8:1'],
+      context: 'widget',
+    });
+  });
+
   it('refuses an unknown context or an oversized name', () => {
     expect(readProcessMenuRequest({ keys: ['8:1'], context: 'services' })).toBeNull();
     expect(

@@ -134,6 +134,13 @@ export class WidgetWindow {
       if (id !== null) this.#host.onClosed(id);
     });
 
+    // Unless it is locked, the whole widget is a drag region, which Windows
+    // treats as a title bar: a right-click there opens Windows' own window menu
+    // and the page never hears it. Declining that menu makes Electron hand the
+    // click to the page instead, which has menus of its own
+    // (electron_desktop_window_tree_host_win.cc, HandleMouseEvent).
+    window.on('system-context-menu', (event) => event.preventDefault());
+
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', (event) => event.preventDefault());
 

@@ -4,6 +4,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -41,9 +42,26 @@ const INDENT_PER_LEVEL = 14;
 
 type ViewMode = 'flat' | 'tree';
 
+/** A row to scroll into view: centred for a jump, just in view for a key. */
+interface Reveal {
+  key: string;
+  nonce: number;
+  center?: boolean;
+}
+
 const EMPTY: ProcessSnapshot[] = [];
 
-export function ProcessesPage({ onRunNewTask }: { onRunNewTask: () => void }): React.JSX.Element {
+export function ProcessesPage({
+  onRunNewTask,
+  show = null,
+  onShown,
+}: {
+  onRunNewTask: () => void;
+  /** A process to go to, by key, asked for from outside the page. */
+  show?: string | null;
+  /** Called once `show` has been dealt with. */
+  onShown?: () => void;
+}): React.JSX.Element {
   const [sortKey, setSortKey] = useState<SortKey>('cpu');
   const [descending, setDescending] = useState(true);
   const [query, setQuery] = useState('');
@@ -53,7 +71,7 @@ export function ProcessesPage({ onRunNewTask }: { onRunNewTask: () => void }): R
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   // A request to scroll a row into view. The nonce makes asking twice for the
   // same row scroll twice, which a bare key could not.
-  const [reveal, setReveal] = useState<{ key: string; nonce: number } | null>(null);
+  const [reveal, setReveal] = useState<Reveal | null>(null);
   const [affinity, setAffinity] = useState<AffinityRequest | null>(null);
 
   // Typing must not block the 500 ms snapshot pipeline on a 1000-row re-filter.
@@ -211,10 +229,19 @@ export function ProcessesPage({ onRunNewTask }: { onRunNewTask: () => void }): R
       });
       // A filter hiding the row would make going there look like it failed.
       if (!filtered.some((process) => process.key === key)) setQuery('');
-      select({ keys: new Set([key]), focus: key, anchor: key }, key);
+      setSelection({ keys: new Set([key]), focus: key, anchor: key });
+      setReveal({ key, nonce: Date.now(), center: true });
     },
-    [processes, filtered, select],
+    [processes, filtered],
   );
+
+  // A window that has only just opened has no process list yet, so the
+  // request waits for one. A process missing from it has exited.
+  useEffect(() => {
+    if (!show || processes.length === 0) return;
+    if (processes.some((process) => process.key === show)) goTo(show);
+    onShown?.();
+  }, [show, processes, goTo, onShown]);
 
   const openMenu = useCallback(
     (keys: string[]) => {
@@ -570,7 +597,7 @@ function VirtualRows({
   viewMode: ViewMode;
   collapsed: ReadonlySet<string>;
   selectedKeys: ReadonlySet<string>;
-  reveal: { key: string; nonce: number } | null;
+  reveal: Reveal | null;
   onRowClick: (key: string, event: React.MouseEvent) => void;
   onRowContextMenu: (key: string, event: React.MouseEvent) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
@@ -588,21 +615,50 @@ function VirtualRows({
     if (node) setViewportHeight(node.clientHeight);
   }, []);
 
-  // Scroll just far enough to show a row the keyboard or "Go to parent" moved
-  // to. Runs once per request, so it never fights the user's own scrolling.
+  // After a jump, the row keeps its place on screen as samples reorder the
+  // list, until the user scrolls or selects something else. In a list sorted
+  // by a live value it would otherwise drift out of sight within seconds.
+  const follow = useRef<{ key: string; offset: number; scrollTop: number } | null>(null);
+
+  // Show a row the keyboard, "Go to parent" or the widget moved to. Runs once
+  // per request, so it never fights the user's own scrolling.
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
   useEffect(() => {
     const node = containerRef.current;
+    follow.current = null;
     if (!reveal || !node) return;
     const index = rowsRef.current.findIndex((row) => row.process.key === reveal.key);
     if (index < 0) return;
     const top = index * ROW_HEIGHT;
-    if (top < node.scrollTop) node.scrollTop = top;
-    else if (top + ROW_HEIGHT > node.scrollTop + node.clientHeight) {
-      node.scrollTop = top + ROW_HEIGHT - node.clientHeight;
+    const bottom = top + ROW_HEIGHT;
+    const inView = top >= node.scrollTop && bottom <= node.scrollTop + node.clientHeight;
+    if (reveal.center) {
+      // A jump lands mid-list, with room around it.
+      if (!inView) node.scrollTop = top - (node.clientHeight - ROW_HEIGHT) / 2;
+      follow.current = { key: reveal.key, offset: top - node.scrollTop, scrollTop: node.scrollTop };
+    } else if (top < node.scrollTop) {
+      node.scrollTop = top;
+    } else if (!inView) {
+      // Just far enough, as a list does for the arrow keys.
+      node.scrollTop = bottom - node.clientHeight;
     }
   }, [reveal]);
+
+  // Before paint, so the row never visibly jumps away and back.
+  useLayoutEffect(() => {
+    const node = containerRef.current;
+    const followed = follow.current;
+    if (!node || !followed) return;
+    const index = rows.findIndex((row) => row.process.key === followed.key);
+    if (index < 0 || !selectedKeys.has(followed.key)) {
+      follow.current = null;
+      return;
+    }
+    node.scrollTop = index * ROW_HEIGHT - followed.offset;
+    followed.scrollTop = node.scrollTop;
+    setScrollTop(node.scrollTop);
+  }, [rows, selectedKeys]);
 
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT) + OVERSCAN * 2;
@@ -618,7 +674,10 @@ function VirtualRows({
       tabIndex={0}
       onKeyDown={onKeyDown}
       onScroll={(event) => {
-        setScrollTop(event.currentTarget.scrollTop);
+        const top = event.currentTarget.scrollTop;
+        // Any scrolling but the following itself is the user's, and ends it.
+        if (follow.current && Math.abs(top - follow.current.scrollTop) > 1) follow.current = null;
+        setScrollTop(top);
         onScrollLeft(event.currentTarget.scrollLeft);
       }}
       className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-dim"

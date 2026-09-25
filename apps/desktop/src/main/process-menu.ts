@@ -40,6 +40,8 @@ export interface ProcessMenuModel {
 }
 
 export interface ProcessMenuHandlers {
+  /** Open the main window on the process's row; offered from the widget. */
+  showInTaskManager(): void;
   end(): void;
   endTree(): void;
   closeWindows(): void;
@@ -92,6 +94,13 @@ export function buildProcessMenu(
   }
 
   const items: MenuItemConstructorOptions[] = [];
+  // The widget's way to everything its short menu leaves out.
+  if (model.context === 'widget') {
+    items.push(
+      { label: 'Show in Task Manager', click: handlers.showInTaskManager },
+      { type: 'separator' },
+    );
+  }
   const windows = reachable.reduce((total, target) => total + target.state.windowCount, 0);
   if (windows > 0 && (single || model.applicationName)) {
     items.push(
@@ -179,19 +188,27 @@ function tuningItems(
       enabled: !refused && !partOfWindows && state.efficiencyMode !== undefined,
       click: () => handlers.setEfficiency(state.efficiencyMode !== true),
     },
-    {
-      label: `Set affinity…${why}`,
-      enabled: !refused && state.processors !== undefined && state.affinity !== undefined,
-      click: handlers.affinity,
-    },
+    // A dialog the page draws, and the widget has no room for one.
+    ...(model.context === 'widget'
+      ? []
+      : [
+          {
+            label: `Set affinity…${why}`,
+            enabled: !refused && state.processors !== undefined && state.affinity !== undefined,
+            click: handlers.affinity,
+          },
+        ]),
   ];
 }
 
 function endItem(model: ProcessMenuModel, handlers: ProcessMenuHandlers): MenuItemConstructorOptions {
   const { targets } = model;
   // Shown, not registered: the page handles the key itself, and a registered
-  // accelerator would fire even with the menu closed.
-  const shortcut = { accelerator: 'Delete', registerAccelerator: false } as const;
+  // accelerator would fire even with the menu closed. The widget takes no keys.
+  const shortcut =
+    model.context === 'widget'
+      ? {}
+      : ({ accelerator: 'Delete', registerAccelerator: false } as const);
 
   if (model.applicationName) {
     return { label: `End ${model.applicationName}`, click: handlers.end };

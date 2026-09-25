@@ -67,7 +67,16 @@ function Section({
       <div className="widget-label mb-0.5">{title}</div>
       {rows.length === 0 && <div className="widget-value-sm text-text-muted">—</div>}
       {rows.map((process) => (
-        <div key={process.key} className="flex items-baseline justify-between gap-2">
+        <div
+          key={process.key}
+          className="flex items-baseline justify-between gap-2"
+          onContextMenu={(event) => {
+            // The process's own menu, rather than the widget's.
+            event.preventDefault();
+            event.stopPropagation();
+            void window.taskManager.showProcessMenu({ keys: [process.key], context: 'widget' });
+          }}
+        >
           <span className="widget-process truncate" title={process.imagePath ?? process.name}>
             {process.name}
           </span>

@@ -54,6 +54,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* No scroll anchoring. Chromium keeps a row it has picked as an anchor at the
+   same place on screen by scrolling to it, so a list that is re-sorted by live
+   values on every sample would scroll by itself while nobody touches it. */
+* {
+  overflow-anchor: none;
+}
+
 /* Values the user may want to copy out of the debug view. */
 .selectable {
   user-select: text;

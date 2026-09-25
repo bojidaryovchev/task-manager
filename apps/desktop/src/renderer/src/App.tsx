@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { AppCommand } from '@shared/ipc';
 import { telemetryStore } from './lib/telemetry-store.js';
 import { useNativeStatus } from './lib/hooks.js';
@@ -22,6 +22,9 @@ import { NavigationContext } from './lib/navigation.js';
 export function App(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('overview');
   const [runTask, setRunTask] = useState(false);
+  // A process to select on the Processes page, until the page has taken it.
+  const [showProcess, setShowProcess] = useState<string | null>(null);
+  const onProcessShown = useCallback(() => setShowProcess(null), []);
   const status = useNativeStatus();
 
   // Commands from elsewhere, such as the tray's Run new task. One sent before
@@ -29,6 +32,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const handle = (command: AppCommand | null): void => {
       if (command?.kind === 'runNewTask') setRunTask(true);
+      if (command?.kind === 'showProcess') {
+        setPage('processes');
+        setShowProcess(command.key);
+      }
     };
     const stop = window.taskManager.onAppCommand((command) => {
       handle(command);
@@ -94,7 +101,13 @@ export function App(): React.JSX.Element {
           {page === 'overview' && <OverviewPage />}
           {page === 'cpu' && <CpuPage />}
           {page === 'memory' && <MemoryPage />}
-          {page === 'processes' && <ProcessesPage onRunNewTask={() => setRunTask(true)} />}
+          {page === 'processes' && (
+            <ProcessesPage
+              onRunNewTask={() => setRunTask(true)}
+              show={showProcess}
+              onShown={onProcessShown}
+            />
+          )}
           {page === 'applications' && <ApplicationsPage />}
           {page === 'gpu' && <GpuPage />}
           {page === 'disk' && <DiskPage />}

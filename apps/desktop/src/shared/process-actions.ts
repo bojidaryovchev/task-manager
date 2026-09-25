@@ -79,8 +79,14 @@ export interface ActionOutcome {
   count?: number;
 }
 
-/** Where a process menu was opened, which decides what it offers. */
-export type ProcessMenuContext = 'processes' | 'applications';
+/**
+ * Where a process menu was opened, which decides what it offers. The widget
+ * has no page to draw a dialog on or go to a row in, so its menu leaves those
+ * out and offers to show the process in Task Manager instead.
+ */
+export type ProcessMenuContext = 'processes' | 'applications' | 'widget';
+
+const PROCESS_MENU_CONTEXTS: readonly ProcessMenuContext[] = ['processes', 'applications', 'widget'];
 
 /** A request from a page to show the menu for one or more processes. */
 export interface ProcessMenuRequest {
@@ -144,14 +150,15 @@ export function readProcessMenuRequest(value: unknown): ProcessMenuRequest | nul
   const candidate = value as Record<string, unknown>;
   const keys = readProcessKeys(candidate.keys);
   if (!keys) return null;
-  if (candidate.context !== 'processes' && candidate.context !== 'applications') return null;
+  const context = PROCESS_MENU_CONTEXTS.find((known) => known === candidate.context);
+  if (!context) return null;
   const name = candidate.applicationName;
   if (name !== undefined && (typeof name !== 'string' || name.length > MAX_APPLICATION_NAME)) {
     return null;
   }
   return {
     keys,
-    context: candidate.context,
+    context,
     ...(typeof name === 'string' && name.trim() !== '' ? { applicationName: name } : {}),
   };
 }

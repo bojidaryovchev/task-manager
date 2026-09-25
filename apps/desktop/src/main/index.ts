@@ -589,6 +589,7 @@ if (!app.requestSingleInstanceLock()) {
         settings: store,
         logger,
         restartElevated,
+        showProcess: (key) => sendAppCommand({ kind: 'showProcess', key }),
       });
       appSettings = new AppSettingsController({
         settings: store,

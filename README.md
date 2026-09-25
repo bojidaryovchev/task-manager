@@ -216,8 +216,8 @@ the metrics that are actually additive. Right-click the column header to choose
 columns: user, priority, start time, description, publisher, path, command line
 and more, all already measured. Run new task opens a program, folder, document
 or website the way Windows' Run dialog does, optionally as administrator, from
-the Processes page or the tray. Right-click any text for Cut, Copy and Paste. Right-click for End task, End process tree,
-Close window, Switch to, Set priority, Efficiency mode, Set affinity, Restart
+the Processes page or the tray. Right-click any text for Cut, Copy and Paste.
+Right-click a process for End task, End process tree, Close window, Switch to, Set priority, Efficiency mode, Set affinity, Restart
 (for Windows Explorer), Open file location, Properties, Search online and Copy;
 select several with Ctrl or Shift, end them with Delete, and hold Ctrl to freeze
 the list while you aim, as in Windows Task Manager. Every action checks the
@@ -263,8 +263,11 @@ approximated — see below.
 **Desktop widget** — a frameless, always-on-top overlay in four layouts
 (minimal, compact, performance, top consumers), with selectable metrics, an
 optional temperature column between each label and its value, adjustable
-opacity, click-through, position lock, edge snapping and persisted placement. It is a second window in the same application reading the same
-snapshot stream, so it cannot disagree with the main window.
+opacity, click-through, position lock, edge snapping and persisted placement.
+Right-click a process in the top consumers layout for its process menu, with
+Show in Task Manager to open it on the Processes page. It is a second window in
+the same application reading the same snapshot stream, so it cannot disagree
+with the main window.
 
 **Export** — the whole snapshot, or any part of it, as JSON or Markdown, to a
 file or the clipboard. Built for handing to a language model for analysis, so
