@@ -77,6 +77,12 @@ export declare function closeProcessWindows(key: string): JsActionOutcome
 export declare function collectSingleSnapshot(): JsSystemSnapshot
 
 /**
+ * Turn on SeDebugPrivilege, which a process running as administrator holds but
+ * has switched off. True when it is on afterwards.
+ */
+export declare function enableDebugPrivilege(): boolean
+
+/**
  * End a process and wait briefly to see it go.
  *
  * Resolves to `ended`, `stillExiting`, `critical` (refused: ending it would
@@ -297,6 +303,16 @@ export interface JsHostInfo {
   hasDebugPrivilege: boolean
   bootTimeUnixMs?: number
   nativeModuleVersion: string
+}
+
+/** The result of asking to run something as administrator. */
+export interface JsLaunchOutcome {
+  /**
+   * `started`, `declined` (the user answered no, which is not a failure)
+   * or `failed`, with the Windows error.
+   */
+  outcome: 'started' | 'declined' | 'failed'
+  win32Error?: number
 }
 
 export interface JsLogicalProcessorSample {
@@ -580,8 +596,18 @@ export interface JsThermalZoneSnapshot {
   highPrecision: boolean
 }
 
+/**
+ * Start `file` with `parameters` as administrator, through the Windows
+ * elevation prompt. Resolves once the user has answered it, which can take as
+ * long as they like, so it runs off the JavaScript thread.
+ */
+export declare function launchElevated(file: string, parameters: string): Promise<JsLaunchOutcome>
+
 /** Confirms the native module loaded and reports its version. */
 export declare function nativeProbe(): string
+
+/** The full path of the executable a process is running, when it can be read. */
+export declare function processImagePath(pid: number): string | null
 
 /**
  * Ask Windows to restart this application if it crashes or stops responding.
@@ -591,6 +617,14 @@ export declare function nativeProbe(): string
  * means the application will not come back by itself.
  */
 export declare function registerForRestart(commandLine: string): boolean
+
+/**
+ * Show the Windows Properties dialog for a file, as Explorer does.
+ *
+ * False when Windows could not show it, usually because the file is no longer
+ * at that path.
+ */
+export declare function showFileProperties(path: string): boolean
 
 /**
  * Cancel the restart registration, so a deliberate quit is never mistaken for

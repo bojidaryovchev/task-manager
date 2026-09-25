@@ -45,6 +45,24 @@ export interface NativeTelemetryModule {
   bringProcessToFront(key: string): ActionOutcome;
   /** Show Windows' Properties dialog for a file. False when it could not. */
   showFileProperties(path: string): boolean;
+
+  // --- running as administrator ----------------------------------------------
+  /**
+   * Start a program as administrator, through the Windows elevation prompt.
+   * Resolves once the user has answered it.
+   */
+  launchElevated(file: string, parameters: string): Promise<LaunchOutcome>;
+  /** Switch on SeDebugPrivilege. True when it is on afterwards. */
+  enableDebugPrivilege(): boolean;
+  /** The executable a process is running, when it can be read. */
+  processImagePath(pid: number): string | null;
+}
+
+/** What became of a request to run something as administrator. */
+export interface LaunchOutcome {
+  /** `declined` means the user said no, which is not a failure. */
+  outcome: 'started' | 'declined' | 'failed';
+  win32Error?: number;
 }
 
 export interface NativeEngine {

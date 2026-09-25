@@ -1,4 +1,5 @@
 pub mod dxgi;
+pub mod elevation;
 pub mod ntdll;
 pub mod nvml;
 pub mod pdh;

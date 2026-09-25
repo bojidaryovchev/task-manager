@@ -268,6 +268,67 @@ pub fn bring_process_to_front(key: String) -> JsActionOutcome {
     }
 }
 
+/// The result of asking to run something as administrator.
+#[napi(object)]
+pub struct JsLaunchOutcome {
+    /// `started`, `declined` (the user answered no, which is not a failure)
+    /// or `failed`, with the Windows error.
+    #[napi(ts_type = "'started' | 'declined' | 'failed'")]
+    pub outcome: String,
+    pub win32_error: Option<u32>,
+}
+
+pub struct LaunchElevated {
+    file: String,
+    parameters: String,
+}
+
+impl Task for LaunchElevated {
+    type Output = crate::win::elevation::Launch;
+    type JsValue = JsLaunchOutcome;
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        Ok(crate::win::elevation::launch_elevated(
+            &self.file,
+            &self.parameters,
+        ))
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
+        use crate::win::elevation::Launch;
+        let (outcome, win32_error) = match output {
+            Launch::Started => ("started", None),
+            Launch::Declined => ("declined", None),
+            Launch::Failed(error) => ("failed", Some(error)),
+        };
+        Ok(JsLaunchOutcome {
+            outcome: outcome.to_string(),
+            win32_error,
+        })
+    }
+}
+
+/// Start `file` with `parameters` as administrator, through the Windows
+/// elevation prompt. Resolves once the user has answered it, which can take as
+/// long as they like, so it runs off the JavaScript thread.
+#[napi(ts_return_type = "Promise<JsLaunchOutcome>")]
+pub fn launch_elevated(file: String, parameters: String) -> AsyncTask<LaunchElevated> {
+    AsyncTask::new(LaunchElevated { file, parameters })
+}
+
+/// Turn on SeDebugPrivilege, which a process running as administrator holds but
+/// has switched off. True when it is on afterwards.
+#[napi]
+pub fn enable_debug_privilege() -> bool {
+    crate::win::elevation::enable_debug_privilege()
+}
+
+/// The full path of the executable a process is running, when it can be read.
+#[napi]
+pub fn process_image_path(pid: u32) -> Option<String> {
+    crate::win::elevation::image_path(pid)
+}
+
 /// Show the Windows Properties dialog for a file, as Explorer does.
 ///
 /// False when Windows could not show it, usually because the file is no longer

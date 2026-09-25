@@ -135,6 +135,22 @@ export const ERROR_CODES = {
       "Windows could not open the folder or the properties of the program's executable, usually because the file was moved or deleted after the program started.",
     action: 'Check whether the path shown still exists.',
   },
+  'TM-0010': {
+    subsystem: 'actions',
+    title: 'Task Manager could not restart as administrator',
+    meaning:
+      'Windows could not start the administrator copy, for the reason given by the Windows error number alongside this code. This copy is still running, without administrator rights, exactly as before.',
+    action:
+      'Try again. If it keeps failing, right-click the Task Manager executable and choose Run as administrator.',
+  },
+  'TM-0011': {
+    subsystem: 'actions',
+    title: 'The debug privilege could not be switched on',
+    meaning:
+      'Task Manager is running as administrator, but Windows did not let it switch on the privilege that opens processes running as other accounts. Services and some system processes will still refuse to be ended or inspected.',
+    action:
+      'Usually a security policy removed the privilege from administrators. Nothing else is affected.',
+  },
 
   // --- 1xxx startup ---------------------------------------------------------
   'TM-1001': {
@@ -220,6 +236,13 @@ export const ERROR_CODES = {
     meaning:
       'Startup is survivable step by step, so the application is running and useful while one or more parts of it are not. The codes logged just before this one say which.',
     action: 'Look up the codes listed alongside this one; each says what it costs and what to do.',
+  },
+  'TM-1013': {
+    subsystem: 'startup',
+    title: 'Running as administrator could not be set up',
+    meaning:
+      'Checking for administrator rights, or switching on the privilege that goes with them, failed outright. The application runs, but may refuse to end or inspect services and system processes as if it were not elevated.',
+    action: 'Restart the application. Report the message beside this code if it repeats.',
   },
 
   // --- 2xxx native collector ------------------------------------------------

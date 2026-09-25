@@ -58,6 +58,8 @@ export const IpcChannel = {
   ShowProcessMenu: 'process:showMenu',
   /** invoke: (keys: string[]) => void - end the selection, asking first */
   EndProcesses: 'process:end',
+  /** invoke: () => void - restart as administrator, through the Windows prompt */
+  RestartAsAdministrator: 'app:restartAsAdministrator',
 
   /** invoke: () => DiagnosticsInfo */
   GetDiagnostics: 'diagnostics:get',
@@ -230,6 +232,11 @@ export interface TaskManagerApi {
    * asks first, then reports anything that could not be ended.
    */
   endProcesses(keys: string[]): Promise<void>;
+  /**
+   * Restart the application as administrator. Windows asks the user first;
+   * declining leaves everything as it was.
+   */
+  restartAsAdministrator(): Promise<void>;
 
   // --- diagnostics ---------------------------------------------------------
   /** Where the logs live and what has crashed recently. */

@@ -254,9 +254,20 @@ export function confirmEnding(
   processes: ProcessSnapshot[],
   applicationName?: string,
 ): Confirmation {
-  const lost = processes.length === 1
-    ? 'It closes at once, and anything it has not saved is lost.'
-    : 'They close at once, and anything they have not saved is lost.';
+  // Session 0 is where services and Windows' own background processes run.
+  // Windows Task Manager gives the same caution for system processes.
+  const system = processes.filter((process) => process.sessionId === 0).length;
+  const who = system === processes.length ? 'They are' : `${system} of them are`;
+  const caution =
+    system === 0
+      ? ''
+      : processes.length === 1
+        ? '\n\nIt is part of Windows or a service, and ending it may make Windows unstable.'
+        : `\n\n${who} part of Windows or services, and ending ${system === 1 ? 'it' : 'them'} may make Windows unstable.`;
+  const lost =
+    (processes.length === 1
+      ? 'It closes at once, and anything it has not saved is lost.'
+      : 'They close at once, and anything they have not saved is lost.') + caution;
   const first = processes[0]!;
   switch (kind) {
     case 'task':

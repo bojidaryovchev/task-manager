@@ -441,6 +441,30 @@ services in session 0; the rest were the session's own system processes
 therefore says whether administrator rights would help, and the menu marks a
 process that needs them before it is chosen.
 
+### Running as administrator
+
+"Restart as administrator", in the tray menu and wherever a refusal would be
+lifted by it, starts an elevated copy and closes this one. Elevated, the
+application switches on SeDebugPrivilege, which administrators hold but have
+off; with it Windows lets the process open services and other accounts'
+processes. Protected processes still refuse, and critical ones are still never
+ended.
+
+The restart hands over in a fixed order, each step there for a reason:
+
+1. **The single-instance lock is released first,** or the new copy would find
+   it held, decide another copy is running, and quit, leaving none.
+2. **The elevated copy is started from the executable already running,** not
+   from the portable launcher, which would unpack itself into the folder this
+   copy still has open.
+3. **Declining the prompt changes nothing:** the lock is taken back.
+4. **Accepting it stops the portable launcher before this copy exits.** The
+   launcher waits for the application and then deletes the folder it unpacked
+   (`ExecWait`, then `RMDir /r`, in electron-builder's `portable.nsi`), which is
+   now the folder the elevated copy runs from. It is stopped only after
+   checking that it really is this process's parent. The next launch empties
+   the folder before unpacking, so nothing is left behind for long.
+
 ### Which windows are a program's windows
 
 Close and Switch to act on the windows a program has on the taskbar, using

@@ -19,7 +19,7 @@ import {
   type ProcessTreeNode,
 } from '@task-manager/shared';
 import { PageShell } from '../components/primitives.js';
-import { useCtrlHeld, useFrozen, useTelemetry } from '../lib/hooks.js';
+import { useCtrlHeld, useFrozen, useHostInfo, useTelemetry } from '../lib/hooks.js';
 import { ProcessDetails } from '../components/ProcessDetails.js';
 import {
   clickSelection,
@@ -177,6 +177,7 @@ export function ProcessesPage(): React.JSX.Element {
     (a, b) => a.total === b.total && a.denied === b.denied,
   );
   const summary = useFrozen(liveSummary, ctrlHeld);
+  const elevated = useHostInfo()?.isElevated ?? true;
 
   const filtered = useMemo(() => {
     const needle = deferredQuery.trim().toLowerCase();
@@ -391,7 +392,22 @@ export function ProcessesPage(): React.JSX.Element {
       subtitle={
         <span>
           {formatCount(summary.total)} processes · {formatCount(summary.denied)} without detail
-          access · collected in {summary.durationMs.toFixed(1)} ms
+          access
+          {!elevated && summary.denied > 0 && (
+            <>
+              {' ('}
+              <button
+                type="button"
+                onClick={() => void window.taskManager.restartAsAdministrator()}
+                title="Windows keeps these processes' details, and ending them, to administrators. Protected processes refuse even then."
+                className="text-accent hover:underline"
+              >
+                restart as administrator
+              </button>
+              {' to see them)'}
+            </>
+          )}{' '}
+          · collected in {summary.durationMs.toFixed(1)} ms
           {ctrlHeld && <span className="text-text-primary"> · paused while Ctrl is held</span>}
         </span>
       }

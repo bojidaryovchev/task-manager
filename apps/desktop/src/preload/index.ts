@@ -43,6 +43,7 @@ const api: TaskManagerApi = {
   showProcessMenu: (request: ProcessMenuRequest) =>
     ipcRenderer.invoke(IpcChannel.ShowProcessMenu, request),
   endProcesses: (keys: string[]) => ipcRenderer.invoke(IpcChannel.EndProcesses, keys),
+  restartAsAdministrator: () => ipcRenderer.invoke(IpcChannel.RestartAsAdministrator),
 
   getDiagnostics: () => ipcRenderer.invoke(IpcChannel.GetDiagnostics),
   openLogFolder: () => ipcRenderer.invoke(IpcChannel.OpenLogFolder),

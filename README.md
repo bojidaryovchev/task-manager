@@ -211,7 +211,10 @@ Close window, Switch to, Open file location, Properties, Search online and Copy;
 select several with Ctrl or Shift, end them with Delete, and hold Ctrl to freeze
 the list while you aim, as in Windows Task Manager. Every action checks the
 process's start time as well as its PID, so it can never reach a different
-program that inherited the PID.
+program that inherited the PID. Processes Windows keeps from ordinary programs,
+such as services and anything running as administrator, are marked, and
+"Restart as administrator" (tray menu, or the link on the Processes page) gets
+past that for all but protected processes.
 
 **Applications** — processes grouped into applications using only signals Windows
 provides: package identity first, then the publisher and product declared in the

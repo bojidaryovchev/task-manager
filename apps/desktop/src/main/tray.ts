@@ -65,6 +65,8 @@ export class AppTray {
   #settings: SettingsStore;
   #logger: Logger | null;
   #onShowMainWindow: () => void;
+  /** Top-level actions the tray menu carries, supplied by whoever owns them. */
+  #actions: () => MenuItemConstructorOptions[];
   #iconPath: string | undefined;
   /** Pixel size of the notification area's icons on the primary display. */
   #iconSize = 16;
@@ -85,9 +87,11 @@ export class AppTray {
     widget: WidgetController;
     settings: SettingsStore;
     onShowMainWindow: () => void;
+    actions?: () => MenuItemConstructorOptions[];
     logger?: Logger | null;
   }) {
     this.#widget = options.widget;
+    this.#actions = options.actions ?? (() => []);
     this.#settings = options.settings;
     this.#onShowMainWindow = options.onShowMainWindow;
     this.#logger = options.logger ?? null;
@@ -128,7 +132,10 @@ export class AppTray {
     if (!this.#tray) return;
     this.#tray.setContextMenu(
       Menu.buildFromTemplate(
-        this.#widget.buildMenuTemplate('tray', { options: this.#optionItems(), actions: [] }),
+        this.#widget.buildMenuTemplate('tray', {
+          options: this.#optionItems(),
+          actions: this.#actions(),
+        }),
       ),
     );
   }

@@ -228,6 +228,16 @@ describe('asking before ending', () => {
     expect(confirmEnding('several', many).detail).toContain('and 4 more');
   });
 
+  it('cautions about services and parts of Windows, as Task Manager does', () => {
+    expect(confirmEnding('task', [process({ sessionId: 0 })]).detail).toContain(
+      'may make Windows unstable',
+    );
+    expect(confirmEnding('task', [process({ sessionId: 1 })]).detail).not.toContain('unstable');
+    expect(
+      confirmEnding('several', [process({ sessionId: 0 }), process({ sessionId: 1 })]).detail,
+    ).toContain('1 of them are part of Windows or services, and ending it may make');
+  });
+
   it('uses no dashes in anything it says', () => {
     const asked = confirmEnding('application', [process(), process()], 'App');
     expect(`${asked.message}${asked.detail}${asked.confirm}`).not.toMatch(/[–—]/);

@@ -8,6 +8,7 @@ import { readProcessKeys, readProcessMenuRequest } from '@shared/process-actions
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
 import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
+import { RESTARTED_AS_ADMINISTRATOR_ARGUMENT, restartAsAdministrator } from './elevation.js';
 import { ExportService } from './export-service.js';
 import { Logger } from './logger.js';
 import { loadNative } from './native.js';
@@ -210,6 +211,16 @@ function quit(): void {
   app.quit();
 }
 
+/** Restart as administrator, asking Windows first. See elevation.ts. */
+function restartElevated(): void {
+  void restartAsAdministrator({
+    native: () => loadNative().module,
+    logger,
+    quit,
+    window: () => mainWindow,
+  });
+}
+
 function registerIpc(service: TelemetryService, controller: WidgetController): void {
   ipcMain.handle(IpcChannel.GetHostInfo, () => service.hostInfo);
   ipcMain.handle(IpcChannel.GetLatestSnapshot, () => service.latestSnapshot);
@@ -256,6 +267,7 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     if (!valid || !processActions) return null;
     return processActions.showMenu(BrowserWindow.fromWebContents(event.sender), valid);
   });
+  ipcMain.handle(IpcChannel.RestartAsAdministrator, () => restartElevated());
   ipcMain.handle(IpcChannel.EndProcesses, (event, keys: unknown) => {
     const valid = readProcessKeys(keys);
     if (!valid || !processActions) return;
@@ -346,7 +358,10 @@ if (!app.requestSingleInstanceLock()) {
         ? ' — restarted by Windows after the process died outright'
         : resilience.restartOrigin === 'self'
           ? ' — relaunched itself after catching a fatal error'
-          : ''),
+          : '') +
+      (process.argv.includes(RESTARTED_AS_ADMINISTRATOR_ARGUMENT)
+        ? ", restarted as administrator at the user's request"
+        : ''),
   );
   app.on('second-instance', () => showMainWindow());
 
@@ -371,6 +386,19 @@ if (!app.requestSingleInstanceLock()) {
         message: problem.message,
       });
     }
+    // Running as administrator is only worth it with the debug privilege on,
+    // which lets this process open processes running as other accounts. It is
+    // held but off by default, and it must be on before the telemetry service
+    // reads the host information that reports it.
+    step('TM-1013', 'debug privilege', () => {
+      const native = loadNative().module;
+      if (!native?.getHostInfo().isElevated) return;
+      if (native.enableDebugPrivilege()) {
+        logger?.info('app', 'running as administrator, with the debug privilege on');
+      } else {
+        logger?.warn('TM-0011', 'running as administrator, but the debug privilege could not be switched on');
+      }
+    });
     telemetry = step('TM-1004', 'telemetry service', () => new TelemetryService());
     if (settings) {
       const store = settings;
@@ -380,6 +408,7 @@ if (!app.requestSingleInstanceLock()) {
         elevated: () => telemetry?.hostInfo?.isElevated === true,
         settings: store,
         logger,
+        restartElevated,
       });
     }
 
@@ -429,6 +458,10 @@ if (!app.requestSingleInstanceLock()) {
         widget,
         settings: settings as SettingsStore,
         onShowMainWindow: showMainWindow,
+        actions: () =>
+          telemetry?.hostInfo?.isElevated === false
+            ? [{ label: 'Restart as administrator', click: restartElevated }]
+            : [],
         logger,
       });
       tray.create(iconPath());

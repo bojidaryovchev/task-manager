@@ -192,10 +192,10 @@ pub fn host_info() -> JsHostInfo {
         os_build,
         architecture: native_architecture(),
         is_elevated: is_elevated(),
-        // SeDebugPrivilege is only obtainable when elevated. We do not enable it
-        // yet - nothing collected so far needs it - so this reports the
-        // possibility, not an acquired privilege.
-        has_debug_privilege: false,
+        // Read from the token rather than assumed: the application turns the
+        // privilege on when it runs as administrator, and this says whether
+        // that actually took.
+        has_debug_privilege: crate::win::elevation::debug_privilege_enabled(),
         boot_time_unix_ms: Some(crate::clock::wall_clock_unix_ms() - uptime_ms),
         native_module_version: env!("CARGO_PKG_VERSION").to_string(),
     }
