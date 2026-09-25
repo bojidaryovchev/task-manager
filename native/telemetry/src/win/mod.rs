@@ -5,6 +5,7 @@ pub mod nvml;
 pub mod pdh;
 pub mod process_control;
 pub mod restart;
+pub mod services;
 pub mod shell;
 pub mod storage;
 pub mod topology;

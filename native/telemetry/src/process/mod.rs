@@ -23,6 +23,7 @@
 
 mod details;
 mod metadata;
+mod services;
 
 use std::collections::HashMap;
 
@@ -32,6 +33,7 @@ use crate::win::ntdll::{self, ProcessListIter};
 
 pub use details::ProcessDetails;
 pub use metadata::{ImageMetadata, PackageIdentity};
+pub use services::HostedService;
 
 /// Stable identity for a process across samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -107,6 +109,8 @@ pub struct ProcessSample {
     pub application_user_model_id: Option<String>,
     /// Why a handle-derived field is missing, when it is.
     pub detail_failure: Option<&'static str>,
+    /// The Windows services running in this process. Empty for most.
+    pub services: Vec<HostedService>,
 }
 
 /// Result of one process collection pass.
@@ -142,6 +146,8 @@ pub struct ProcessCollector {
     buffer: Vec<u8>,
     /// Reused set of live identities, to avoid allocating one per sample.
     live_keys: std::collections::HashSet<ProcessKey>,
+    /// Which services each process hosts, re-read every few seconds.
+    services: services::ServiceIndex,
 }
 
 impl ProcessCollector {
@@ -153,6 +159,7 @@ impl ProcessCollector {
             logical_processor_count: logical_processor_count.max(1),
             buffer: Vec::new(),
             live_keys: std::collections::HashSet::with_capacity(512),
+            services: services::ServiceIndex::new(),
         }
     }
 
@@ -255,10 +262,12 @@ impl ProcessCollector {
                 package_full_name: None,
                 application_user_model_id: None,
                 detail_failure: None,
+                services: Vec::new(),
             });
         }
 
         let total_count = raw.len();
+        let services = self.services.latest();
         let mut access_denied_count = 0usize;
 
         for sample in raw.iter_mut() {
@@ -325,6 +334,10 @@ impl ProcessCollector {
                     last_seen: self.sequence,
                 },
             );
+
+            if let Some(hosted) = services.hosted_by(sample.pid, sample.create_time_100ns) {
+                sample.services = hosted.to_vec();
+            }
 
             // Static details, resolved once per identity and subject to a
             // per-tick budget. A process still awaiting resolution simply has

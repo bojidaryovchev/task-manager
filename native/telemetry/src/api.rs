@@ -254,6 +254,20 @@ pub struct JsProcessSnapshot {
     /// be checked against it exactly.
     #[napi(ts_type = "'accessDenied' | 'processExited' | 'notSupported' | 'pending'")]
     pub detail_failure: Option<String>,
+
+    /// The Windows services running in this process. Absent for the many
+    /// processes that host none.
+    pub services: Option<Vec<JsHostedService>>,
+}
+
+/// A service a process hosts, by both of its names.
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct JsHostedService {
+    /// The key name, e.g. `Audiosrv`.
+    pub name: String,
+    /// The name people read, e.g. `Windows Audio`.
+    pub display_name: String,
 }
 
 #[napi(object)]
@@ -543,6 +557,16 @@ fn process_to_js(sample: &ProcessSample) -> JsProcessSnapshot {
         gpu_dedicated_memory_bytes: sample.gpu_dedicated_memory_bytes,
         gpu_shared_memory_bytes: sample.gpu_shared_memory_bytes,
         detail_failure: sample.detail_failure.map(str::to_owned),
+        services: (!sample.services.is_empty()).then(|| {
+            sample
+                .services
+                .iter()
+                .map(|service| JsHostedService {
+                    name: service.name.clone(),
+                    display_name: service.display_name.clone(),
+                })
+                .collect()
+        }),
     }
 }
 

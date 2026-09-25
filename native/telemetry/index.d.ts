@@ -293,6 +293,14 @@ export interface JsHistoryTier {
   rowCount: number
 }
 
+/** A service a process hosts, by both of its names. */
+export interface JsHostedService {
+  /** The key name, e.g. `Audiosrv`. */
+  name: string
+  /** The name people read, e.g. `Windows Audio`. */
+  displayName: string
+}
+
 export interface JsHostInfo {
   computerName: string
   osName?: string
@@ -489,6 +497,11 @@ export interface JsProcessSnapshot {
    * be checked against it exactly.
    */
   detailFailure?: 'accessDenied' | 'processExited' | 'notSupported' | 'pending'
+  /**
+   * The Windows services running in this process. Absent for the many
+   * processes that host none.
+   */
+  services?: Array<JsHostedService>
 }
 
 /** What the process menu needs to know before it is shown. */

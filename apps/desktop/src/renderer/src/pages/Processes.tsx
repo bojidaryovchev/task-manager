@@ -190,7 +190,13 @@ export function ProcessesPage(): React.JSX.Element {
         String(p.pid) === needle ||
         (p.imagePath?.toLowerCase().includes(needle) ?? false) ||
         (p.userName?.toLowerCase().includes(needle) ?? false) ||
-        (p.productName?.toLowerCase().includes(needle) ?? false),
+        (p.productName?.toLowerCase().includes(needle) ?? false) ||
+        (p.services?.some(
+          (service) =>
+            service.name.toLowerCase().includes(needle) ||
+            service.displayName.toLowerCase().includes(needle),
+        ) ??
+          false),
     );
   }, [processes, deferredQuery]);
 
@@ -443,7 +449,7 @@ export function ProcessesPage(): React.JSX.Element {
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Filter by name, PID, path, user or product"
+            placeholder="Filter by name, PID, path, user, product or service"
             spellCheck={false}
             className="w-72 rounded border border-border-subtle bg-surface-2 px-2 py-1 text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-accent-dim"
           />
@@ -733,11 +739,23 @@ const ProcessRow = memo(function ProcessRow({
             <span className="w-3 shrink-0" />
           ))}
         <span
-          className={`truncate ${isIdle ? 'text-text-muted' : ''}`}
+          className={`truncate ${isIdle ? 'text-text-muted' : ''} ${process.services ? 'shrink-0' : ''}`}
           title={process.imagePath ?? process.name}
         >
           {process.name}
         </span>
+        {process.services && (
+          // The services a host process runs, so 99 svchost.exe rows each say
+          // what they are.
+          <span
+            className="min-w-0 truncate text-[11px] text-text-muted"
+            title={process.services
+              .map((service) => `${service.displayName} (${service.name})`)
+              .join('\n')}
+          >
+            {process.services.map((service) => service.displayName).join(', ')}
+          </span>
+        )}
         {totals && (
           <span
             className="shrink-0 rounded bg-surface-3 px-1 text-[10px] text-text-muted"

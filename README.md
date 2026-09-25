@@ -205,8 +205,9 @@ non-paged pool, page file size and usage, page size.
 user, architecture, session, protection, base priority, CPU (as machine share and
 as core equivalent), private working set, working set, private commit, peak
 working set, pools, virtual size, page and hard faults, threads, handles,
-cumulative and per-second I/O. Flat and tree views, with subtree totals for the
-metrics that are actually additive. Right-click for End task, End process tree,
+cumulative and per-second I/O, and the Windows services each process hosts, so
+every `svchost.exe` says what it is. Flat and tree views, with subtree totals for
+the metrics that are actually additive. Right-click for End task, End process tree,
 Close window, Switch to, Set priority, Efficiency mode, Set affinity, Restart
 (for Windows Explorer), Open file location, Properties, Search online and Copy;
 select several with Ctrl or Shift, end them with Delete, and hold Ctrl to freeze

@@ -129,6 +129,22 @@ export interface ProcessSnapshot {
   gpuSharedMemoryBytes?: number;
 
   detailFailure?: ProcessDetailFailure;
+
+  /**
+   * The Windows services running in this process, from the Service Control
+   * Manager, re-read every few seconds. Absent for processes that host none.
+   * Only credited to a process created before the list was read, so a
+   * recycled PID never inherits another process's services.
+   */
+  services?: HostedService[];
+}
+
+/** A Windows service, by both of its names. */
+export interface HostedService {
+  /** The key name, e.g. `Audiosrv`. */
+  name: string;
+  /** The name people read, e.g. `Windows Audio`. */
+  displayName: string;
 }
 
 export interface ProcessesSnapshot {

@@ -513,6 +513,18 @@ window. Cloaked windows and the shell's own surfaces - the taskbar and the
 desktop - are excluded, so asking Explorer's windows to close can never reach
 the taskbar.
 
+### Services inside svchost.exe
+
+Each process that hosts Windows services lists them by name, so the hundred
+or so `svchost.exe` rows each say what they are, the filter finds a process by
+the services it runs, and its details list them. The list comes from
+`EnumServicesStatusExW`, which needs no administrator rights and covered every
+`svchost.exe` on the development machine (101 of 101). Reading it was measured
+at 34 ms median, too long for the sampling thread, so a worker thread reads it
+every five seconds while the process list is being collected, and the collector
+takes the latest reading. A process is credited with services only if it was
+created before the list was read, so a recycled PID cannot inherit them.
+
 ### Holding Ctrl
 
 As in Windows Task Manager, holding Ctrl freezes the Processes and Applications

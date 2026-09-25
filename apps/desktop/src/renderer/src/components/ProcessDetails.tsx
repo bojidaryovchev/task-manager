@@ -123,6 +123,15 @@ export function ProcessDetails({
           definition="Page faults that required a disk read. A rising count under memory pressure is what thrashing looks like."
         />
 
+        {process.services && (
+          <>
+            <SectionTitle>Services</SectionTitle>
+            {process.services.map((service) => (
+              <Field key={service.name} label={service.displayName} value={service.name} mono />
+            ))}
+          </>
+        )}
+
         <SectionTitle>Counts</SectionTitle>
         <Field label="Threads" value={formatCount(process.threadCount)} />
         <Field label="Handles" value={formatCount(process.handleCount)} />
