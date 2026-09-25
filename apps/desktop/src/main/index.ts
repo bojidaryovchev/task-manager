@@ -18,6 +18,7 @@ import {
   readProcessorIndices,
 } from '@shared/process-actions.js';
 import { readServiceMenuRequest } from '@shared/services.js';
+import { readStartupItemId } from '@shared/startup.js';
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
 import { ActionGate } from './action-gate.js';
@@ -33,6 +34,7 @@ import { codeLines } from './process-menu.js';
 import { readCommand, runNewTask } from './run-task.js';
 import { Resilience, WINDOWS_RESTART_ARGUMENT } from './resilience.js';
 import { ServiceActions } from './service-actions.js';
+import { StartupActions } from './startup-actions.js';
 import { SettingsStore } from './settings-store.js';
 import { TelemetryService } from './telemetry-service.js';
 import { AppTray } from './tray.js';
@@ -58,6 +60,7 @@ let resilience: Resilience | null = null;
 let guard: CrashGuard | null = null;
 let processActions: ProcessActions | null = null;
 let serviceActions: ServiceActions | null = null;
+let startupActions: StartupActions | null = null;
 let appSettings: AppSettingsController | null = null;
 /** A command for the page, kept until the page takes it. */
 let pendingAppCommand: AppCommand | null = null;
@@ -464,6 +467,21 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
   ipcMain.handle(IpcChannel.OpenServicesConsole, (event) =>
     serviceActions?.openServices(BrowserWindow.fromWebContents(event.sender)),
   );
+  ipcMain.handle(IpcChannel.GetStartupItems, () => startupActions?.list() ?? []);
+  ipcMain.handle(IpcChannel.ShowStartupMenu, (event, id: unknown) => {
+    const valid = readStartupItemId(id);
+    if (!valid || !startupActions) return false;
+    return startupActions.showMenu(BrowserWindow.fromWebContents(event.sender), valid);
+  });
+  ipcMain.handle(IpcChannel.SetStartupItemEnabled, (event, id: unknown, enabled: unknown) => {
+    const valid = readStartupItemId(id);
+    if (!valid || !startupActions) return false;
+    return startupActions.setEnabled(
+      BrowserWindow.fromWebContents(event.sender),
+      valid,
+      enabled === true,
+    );
+  });
 
   ipcMain.handle(IpcChannel.GetDiagnostics, (): DiagnosticsInfo => ({
     logDirectory: logger?.directory ?? '',
@@ -602,6 +620,13 @@ if (!app.requestSingleInstanceLock()) {
       latestSnapshot: () => telemetry?.latestSnapshot ?? null,
       elevated: () => telemetry?.hostInfo?.isElevated === true,
       refreshServices: () => telemetry?.refreshServices(),
+      logger,
+      restartElevated,
+      gate,
+    });
+    startupActions = new StartupActions({
+      native: () => loadNative().module,
+      elevated: () => telemetry?.hostInfo?.isElevated === true,
       logger,
       restartElevated,
       gate,

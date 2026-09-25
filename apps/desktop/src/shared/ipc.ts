@@ -10,6 +10,7 @@ import type { MenuItemSpec } from './menu.js';
 import type { ProcessMenuCommand, ProcessMenuRequest } from './process-actions.js';
 import type { ProcessColumnId } from './process-columns.js';
 import type { ServiceMenuCommand, ServiceMenuRequest } from './services.js';
+import type { StartupItem, StartupItemId } from './startup.js';
 import type { WidgetSettings } from './widget.js';
 
 /**
@@ -79,6 +80,12 @@ export const IpcChannel = {
   ShowServiceMenu: 'service:showMenu',
   /** invoke: () => void - open the Windows Services console */
   OpenServicesConsole: 'service:openConsole',
+  /** invoke: () => StartupItem[] - what Windows starts at sign-in, read now */
+  GetStartupItems: 'startup:list',
+  /** invoke: (id: StartupItemId) => boolean - the menu; true when something changed */
+  ShowStartupMenu: 'startup:showMenu',
+  /** invoke: (id: StartupItemId, enabled: boolean) => boolean - true when changed */
+  SetStartupItemEnabled: 'startup:setEnabled',
   /** invoke: () => void - restart as administrator, through the Windows prompt */
   RestartAsAdministrator: 'app:restartAsAdministrator',
   /** invoke: (key, processors: number[]) => void - from the affinity dialog */
@@ -305,6 +312,17 @@ export interface TaskManagerApi {
   showServiceMenu(request: ServiceMenuRequest): Promise<ServiceMenuCommand>;
   /** Open the Windows Services console, saying so if it could not be opened. */
   openServicesConsole(): Promise<void>;
+
+  // --- startup apps --------------------------------------------------------
+  /** What Windows starts at sign-in, read now. */
+  getStartupItems(): Promise<StartupItem[]>;
+  /**
+   * Show the menu for a startup entry. Resolves once it has closed, true when
+   * something was changed and the list should be read again.
+   */
+  showStartupMenu(id: StartupItemId): Promise<boolean>;
+  /** Turn a startup entry on or off. True when it was changed. */
+  setStartupItemEnabled(id: StartupItemId, enabled: boolean): Promise<boolean>;
   /**
    * Restart the application as administrator. Windows asks the user first;
    * declining leaves everything as it was.

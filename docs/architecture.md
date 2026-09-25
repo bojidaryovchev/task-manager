@@ -651,6 +651,51 @@ and the Windows calls follow the documented samples.
 Processes page, trusting the PID only for a process created before the service
 list was read; a process that hosts services goes to them on the Services page.
 
+## Startup apps
+
+The Startup apps page lists what Windows starts when the user signs in and
+turns each on or off.
+
+**Where they come from.** The current user's and the machine's Run keys (the
+machine's 32-bit one too) and the two Startup folders, which are the places
+Microsoft documents. Packaged Store apps that register to start themselves
+are not listed, and the page says so. Each entry's program is read from its
+command, and its name and publisher from that program's version information;
+a Startup folder shortcut's target is not read, so it is shown as the
+shortcut.
+
+**On or off is undocumented, so only what was observed is used.** Windows does
+not delete an entry it is told not to start. It records the choice under
+`Explorer\StartupApproved`, in the entry's own hive, as a `REG_BINARY` value
+named after the entry. Microsoft does not document the format. On the
+development machine:
+
+- entries with a first byte of `02` or `06` were started at sign-in: Viber
+  (`02`) 13 seconds after it, Windows Security's tray icon (`06`) 8 seconds
+  after it;
+- entries with `03` were not running: Steam and DAEMON Tools, whose values
+  also held the time they were turned off, 17 seconds apart on one day, as a
+  FILETIME in bytes 4 to 11;
+- an entry with no value at all is one never switched, and runs, which is
+  what Microsoft documents for the Run keys.
+
+Anything else is shown as Unknown, never guessed as either. Turning an entry
+on or off writes exactly the two forms observed: `02` and zeros, or `03` and
+the current time. Citrix documents the same two values, and that a Startup
+folder item's value is named after its file (CTX492466). Machine-wide entries
+are recorded in the machine's hive, so changing them needs administrator
+rights, and the menu says so.
+
+**Not exercised live.** Whether a switched entry then starts at the next
+sign-in cannot be tried without one, and the development machine's real
+entries were not switched. The write was tested against a scratch key of its
+own and read back, and a machine-wide entry was chosen unelevated from the
+real menu, with the report recorded rather than shown: refused, with its
+value unchanged.
+
+There is no Startup impact column. Windows does not document where or how it
+measures startup impact, so it is not shown.
+
 ## Renderer performance
 
 A snapshot arrives every 500 ms and most of it is irrelevant to most components.

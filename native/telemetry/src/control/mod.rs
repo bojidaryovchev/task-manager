@@ -30,6 +30,7 @@ use crate::win::process_control::{
 use crate::win::window;
 
 pub mod services;
+pub mod startup;
 
 /// How long ending a process waits to see it actually go.
 ///
@@ -478,8 +479,8 @@ pub fn launch_elevated(file: String, parameters: String) -> AsyncTask<LaunchElev
 
 /// Split a command into the thing to open and its parameters, the way the Run
 /// dialog reads one: a quoted program; otherwise the longest leading run of
-/// words that names something that exists, so an unquoted path with spaces
-/// still works; otherwise the first word.
+/// words that names something that exists, the whole command included, so an
+/// unquoted path with spaces still works; otherwise the first word.
 pub fn split_command(command: &str, exists: impl Fn(&str) -> bool) -> (String, String) {
     let command = command.trim();
     if let Some(rest) = command.strip_prefix('"') {
@@ -487,6 +488,9 @@ pub fn split_command(command: &str, exists: impl Fn(&str) -> bool) -> (String, S
             Some((file, parameters)) => (file.to_string(), parameters.trim().to_string()),
             None => (rest.to_string(), String::new()),
         };
+    }
+    if exists(&expand_environment(command)) {
+        return (command.to_string(), String::new());
     }
     let breaks: Vec<usize> = command
         .char_indices()
@@ -834,6 +838,13 @@ mod tests {
                 r"C:\Program Files\App\app.exe".to_string(),
                 "--flag".to_string()
             )
+        );
+        // With nothing after it: the whole command is the program. This used
+        // to split at the first space, as Docker Desktop's startup entry
+        // showed.
+        assert_eq!(
+            split_command(r"C:\Program Files\App\app.exe", exists),
+            (r"C:\Program Files\App\app.exe".to_string(), String::new())
         );
     }
 

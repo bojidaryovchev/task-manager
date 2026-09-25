@@ -5,6 +5,7 @@ import type { AppSettingsView } from '@shared/app-settings';
 import type { MenuItemSpec } from '@shared/menu';
 import type { ProcessMenuRequest } from '@shared/process-actions';
 import type { ServiceMenuRequest } from '@shared/services';
+import type { StartupItemId } from '@shared/startup';
 import type { WidgetSettings } from '@shared/widget';
 
 /**
@@ -74,6 +75,10 @@ const api: TaskManagerApi = {
   showServiceMenu: (request: ServiceMenuRequest) =>
     ipcRenderer.invoke(IpcChannel.ShowServiceMenu, request),
   openServicesConsole: () => ipcRenderer.invoke(IpcChannel.OpenServicesConsole),
+  getStartupItems: () => ipcRenderer.invoke(IpcChannel.GetStartupItems),
+  showStartupMenu: (id: StartupItemId) => ipcRenderer.invoke(IpcChannel.ShowStartupMenu, id),
+  setStartupItemEnabled: (id: StartupItemId, enabled: boolean) =>
+    ipcRenderer.invoke(IpcChannel.SetStartupItemEnabled, id, enabled === true),
   restartAsAdministrator: () => ipcRenderer.invoke(IpcChannel.RestartAsAdministrator),
   setProcessAffinity: (key: string, processors: number[]) =>
     ipcRenderer.invoke(IpcChannel.SetProcessAffinity, key, processors),

@@ -32,7 +32,7 @@ use crate::win::ntdll::{self, ProcessListIter};
 
 pub use crate::services::HostedService;
 pub use details::ProcessDetails;
-pub use metadata::{ImageMetadata, PackageIdentity};
+pub use metadata::{image_metadata, ImageMetadata, PackageIdentity};
 
 /// Stable identity for a process across samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

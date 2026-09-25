@@ -16,6 +16,7 @@ import type {
   SettingOutcome,
 } from '@shared/process-actions.js';
 import type { ServiceOutcome, ServiceState } from '@shared/services.js';
+import type { StartupItem, StartupOutcome } from '@shared/startup.js';
 
 /**
  * The native telemetry module, as N-API generates it.
@@ -103,6 +104,12 @@ export interface NativeTelemetryModule {
   stopService(name: string, withDependents: boolean): Promise<ServiceOutcome>;
   /** Stop and start a service, then start again the dependents stopped with it. */
   restartService(name: string, withDependents: boolean): Promise<ServiceOutcome>;
+
+  // --- startup apps ---------------------------------------------------------
+  /** What Windows starts at sign-in, read now. Changes nothing. */
+  listStartupItems(): StartupItem[];
+  /** Turn a startup entry on or off, the way Windows records it. */
+  setStartupItemEnabled(source: string, name: string, enabled: boolean): StartupOutcome;
 }
 
 /** What became of restarting Windows Explorer. */

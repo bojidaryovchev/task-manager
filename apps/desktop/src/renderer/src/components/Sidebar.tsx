@@ -8,6 +8,7 @@ export type PageId =
   | 'processes'
   | 'applications'
   | 'services'
+  | 'startup'
   | 'cpu'
   | 'memory'
   | 'gpu'
@@ -30,6 +31,7 @@ const ITEMS: NavItem[] = [
   { id: 'processes', label: 'Processes', accent: 'var(--color-text-secondary)' },
   { id: 'applications', label: 'Applications', accent: 'var(--color-text-secondary)' },
   { id: 'services', label: 'Services', accent: 'var(--color-text-secondary)' },
+  { id: 'startup', label: 'Startup apps', accent: 'var(--color-text-secondary)' },
   { id: 'cpu', label: 'CPU', accent: 'var(--color-cpu)' },
   { id: 'memory', label: 'Memory', accent: 'var(--color-memory)' },
   { id: 'gpu', label: 'GPU', accent: 'var(--color-gpu)' },

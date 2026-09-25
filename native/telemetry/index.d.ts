@@ -685,6 +685,44 @@ export interface JsShellOutcome {
   win32Error?: number
 }
 
+/** One program Windows starts when the user signs in. */
+export interface JsStartupItem {
+  /** Where it is registered: a Run key or a Startup folder. */
+  source: 'userRun' | 'machineRun' | 'machineRun32' | 'userFolder' | 'commonFolder'
+  /** The Run value's name, or the Startup folder file's name. */
+  name: string
+  /** The command as registered; for a Startup folder item, its path. */
+  command: string
+  /** The program it starts, when the command names one by full path. */
+  programPath?: string
+  /** Whether that program is where the command says. */
+  programExists: boolean
+  /**
+   * The program's own name for itself: its FileDescription, or its
+   * ProductName.
+   */
+  description?: string
+  /** The program's CompanyName. */
+  publisher?: string
+  /** `unknown` when Windows' record is in a form not seen before. */
+  status: 'enabled' | 'disabled' | 'unknown'
+  /** When it was turned off, when Windows recorded the time. */
+  disabledAtUnixMs?: number
+  /** The first byte of Windows' record, when there is one. */
+  approvalFlag?: number
+}
+
+/** What became of turning a startup entry on or off. */
+export interface JsStartupOutcome {
+  /**
+   * `done`; `notFound` (no such entry any more); `accessDenied` (the
+   * machine-wide entries need administrator rights); or `failed`, with
+   * the Windows error.
+   */
+  outcome: 'done' | 'notFound' | 'accessDenied' | 'failed'
+  win32Error?: number
+}
+
 export interface JsSystemSnapshot {
   sequence: number
   wallClockUnixMs: number
@@ -770,6 +808,12 @@ export interface JsThermalZoneSnapshot {
  */
 export declare function launchElevated(file: string, parameters: string): Promise<JsLaunchOutcome>
 
+/**
+ * Every startup entry this account can read. Reads the registry and the
+ * Startup folders, and each program's version resource; changes nothing.
+ */
+export declare function listStartupItems(): Array<JsStartupItem>
+
 /** Confirms the native module loaded and reports its version. */
 export declare function nativeProbe(): string
 
@@ -834,6 +878,9 @@ export declare function setProcessAffinity(key: string, processors: Array<number
  * effect afterwards is read back and returned.
  */
 export declare function setProcessPriority(key: string, priorityClass: 'idle' | 'belowNormal' | 'normal' | 'aboveNormal' | 'high' | 'realtime'): JsSettingOutcome
+
+/** Turn a startup entry on or off, the way Windows records it. */
+export declare function setStartupItemEnabled(source: string, name: string, enabled: boolean): JsStartupOutcome
 
 /**
  * Show the Windows Properties dialog for a file, as Explorer does.

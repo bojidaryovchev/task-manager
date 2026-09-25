@@ -18,6 +18,7 @@ import { RunTaskDialog } from './components/RunTaskDialog.js';
 import { PausedBanner } from './components/PausedBanner.js';
 import { SettingsPage } from './pages/Settings.js';
 import { ServicesPage } from './pages/Services.js';
+import { StartupPage } from './pages/Startup.js';
 import {
   GoToContext,
   NavigationContext,
@@ -132,6 +133,7 @@ export function App(): React.JSX.Element {
             {page === 'services' && (
               <ServicesPage show={showServices} onShown={onServicesShown} />
             )}
+            {page === 'startup' && <StartupPage />}
             {page === 'gpu' && <GpuPage />}
             {page === 'disk' && <DiskPage />}
             {page === 'network' && <NetworkPage />}

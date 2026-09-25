@@ -463,8 +463,8 @@ function ServiceRow({
       }`}
     >
       <div className="flex min-w-0 flex-1 items-baseline gap-1.5 px-2" title={service.description}>
-        {/* Both give way when the column is narrow, the key name first. */}
-        <span className={`min-w-0 truncate ${stopped ? 'text-text-secondary' : ''}`}>
+        {/* The display name never gives way to the key name. */}
+        <span className={`max-w-full shrink-0 truncate ${stopped ? 'text-text-secondary' : ''}`}>
           {service.displayName}
         </span>
         <span className="min-w-0 shrink-4 truncate text-[11px] text-text-muted">{service.name}</span>

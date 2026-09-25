@@ -234,6 +234,27 @@ export const ERROR_CODES = {
       "Windows could not open the Services console (services.msc), usually because a policy blocks the Microsoft Management Console.",
     action: 'Try running services.msc from Run new task.',
   },
+  'TM-0023': {
+    subsystem: 'actions',
+    title: 'Only administrators can change what starts for every user',
+    meaning:
+      'Programs registered for every user of this PC are recorded in a part of the registry that only administrators may change. Nothing was changed.',
+    action: 'Restart Task Manager as administrator and try again.',
+  },
+  'TM-0024': {
+    subsystem: 'actions',
+    title: 'The startup entry no longer exists',
+    meaning:
+      'It was removed after the list was read, usually by the program itself or by uninstalling it. Nothing was changed.',
+    action: 'None. The list is read again when the page is next shown.',
+  },
+  'TM-0025': {
+    subsystem: 'actions',
+    title: 'The startup setting could not be changed',
+    meaning:
+      'Windows refused to record the change, for the reason given by the Windows error number alongside this code. The program starts or not exactly as before.',
+    action: 'Try again. If it keeps failing, report this code and the Windows error number.',
+  },
 
   // --- 1xxx startup ---------------------------------------------------------
   'TM-1001': {

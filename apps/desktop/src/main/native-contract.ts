@@ -27,10 +27,13 @@ import type {
   JsServiceState,
   JsSettingOutcome,
   JsShellOutcome,
+  JsStartupItem,
+  JsStartupOutcome,
   JsSystemSnapshot,
 } from '@task-manager/telemetry-native';
 import type { ActionOutcome, ProcessState, SettingOutcome } from '@shared/process-actions.js';
 import type { ServiceOutcome, ServiceState } from '@shared/services.js';
+import type { StartupItem, StartupOutcome } from '@shared/startup.js';
 import type { LaunchOutcome, ShellOutcome } from './native.js';
 import type {
   CollectorConfig,
@@ -75,5 +78,11 @@ type _ServiceStateIsDescribed = AssignableTo<JsServiceState, ServiceState>;
 type _ServiceStateIsProduced = AssignableTo<ServiceState, JsServiceState>;
 type _ServiceOutcomeIsDescribed = AssignableTo<JsServiceOutcome, ServiceOutcome>;
 type _ServiceOutcomeIsProduced = AssignableTo<ServiceOutcome, JsServiceOutcome>;
+
+// Startup apps: likewise.
+type _StartupItemIsDescribed = AssignableTo<JsStartupItem, StartupItem>;
+type _StartupItemIsProduced = AssignableTo<StartupItem, JsStartupItem>;
+type _StartupOutcomeIsDescribed = AssignableTo<JsStartupOutcome, StartupOutcome>;
+type _StartupOutcomeIsProduced = AssignableTo<StartupOutcome, JsStartupOutcome>;
 
 export {};

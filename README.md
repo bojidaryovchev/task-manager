@@ -241,6 +241,14 @@ only be started and stopped by an administrator, and the menu says so, per
 service, before offering anything. A service's PID leads to its process, and a
 process that hosts services leads to them.
 
+**Startup apps** — what Windows starts when you sign in, from the Run keys and
+the Startup folders, with each program's own name and publisher, whether it is
+enabled, and since when it has been disabled. Right-click, or use the button,
+to enable or disable one; entries for every user need administrator rights,
+and say so. Windows keeps the on or off setting in a registry format it does
+not document, so only the forms seen in practice are read, and anything else
+shows as Unknown. Store apps that start themselves are not listed.
+
 **GPU** — adapters from DXGI joined to the Windows GPU counter sets by LUID:
 per-adapter utilisation (the maximum across engine types, never a sum),
 per-engine-type breakdown, dedicated and shared memory, and per-process GPU
