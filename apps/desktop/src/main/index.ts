@@ -9,6 +9,7 @@ import {
   type DiagnosticsInfo,
   type StartupFailure,
 } from '@shared/ipc';
+import { readAppSettingsPatch } from '@shared/app-settings.js';
 import {
   isProcessKey,
   readProcessKeys,
@@ -17,6 +18,7 @@ import {
 } from '@shared/process-actions.js';
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
+import { AppSettingsController, START_HIDDEN_ARGUMENT } from './app-settings-controller.js';
 import { showColumnMenu } from './column-menu.js';
 import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
 import { RESTARTED_AS_ADMINISTRATOR_ARGUMENT, restartAsAdministrator } from './elevation.js';
@@ -50,6 +52,7 @@ let logger: Logger | null = null;
 let resilience: Resilience | null = null;
 let guard: CrashGuard | null = null;
 let processActions: ProcessActions | null = null;
+let appSettings: AppSettingsController | null = null;
 /** A command for the page, kept until the page takes it. */
 let pendingAppCommand: AppCommand | null = null;
 /** Whether Windows accepted the restart registration, for the diagnostics view. */
@@ -157,6 +160,7 @@ function createMainWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#0b0d10',
     title: 'Task Manager',
+    alwaysOnTop: settings?.window.alwaysOnTop === true,
     icon: app.isPackaged ? undefined : iconPath(),
     autoHideMenuBar: true,
     webPreferences: {
@@ -284,6 +288,10 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     service.setProcessSubscription(event.sender.id, wanted === true);
   });
   ipcMain.handle(IpcChannel.GetConfig, () => service.getConfig());
+  ipcMain.handle(IpcChannel.GetAppSettings, () => appSettings?.get() ?? null);
+  ipcMain.handle(IpcChannel.SetAppSettings, (_event, patch: unknown) =>
+    appSettings?.update(readAppSettingsPatch(patch)) ?? null,
+  );
   ipcMain.handle(IpcChannel.SetConfig, (_event, patch: Partial<CollectorConfig>) => {
     // Only known keys are forwarded, so a compromised renderer cannot smuggle
     // arbitrary values into the native configuration.
@@ -473,7 +481,11 @@ if (!app.requestSingleInstanceLock()) {
     // wrong below, there is something on screen to say so - which is the whole
     // difference between an application that reports a problem and one that
     // appears not to start at all.
-    mainWindow = step('TM-1002', 'main window', () => createMainWindow());
+    // Started by Windows at sign-in: straight into the tray, with no window
+    // put in front of whatever the user is doing. It still opens if anything
+    // fails to start, or if there is no tray to come back through.
+    const startHidden = process.argv.includes(START_HIDDEN_ARGUMENT);
+    mainWindow = startHidden ? null : step('TM-1002', 'main window', () => createMainWindow());
 
     settings = step('TM-1003', 'settings', () => new SettingsStore());
     // The store falls back to defaults rather than refusing to start, so a
@@ -511,6 +523,14 @@ if (!app.requestSingleInstanceLock()) {
         logger,
         restartElevated,
       });
+      appSettings = new AppSettingsController({
+        settings: store,
+        telemetry: () => telemetry,
+        mainWindow: () => mainWindow,
+        tray: () => tray,
+        logger,
+      });
+      appSettings.applyOnStartup();
     }
 
     if (settings) {
@@ -560,7 +580,9 @@ if (!app.requestSingleInstanceLock()) {
         widget,
         settings: settings as SettingsStore,
         onShowMainWindow: showMainWindow,
+        options: () => appSettings?.trayOptions() ?? [],
         actions: () => [
+          ...(appSettings?.trayActions() ?? []),
           { label: 'Run new task…', click: () => sendAppCommand({ kind: 'runNewTask' }) },
           ...(telemetry?.hostInfo?.isElevated === false
             ? [{ label: 'Restart as administrator', click: restartElevated }]
@@ -584,10 +606,15 @@ if (!app.requestSingleInstanceLock()) {
       // carry the message, and a native message box is the only thing left that
       // can. It needs no renderer, no GPU and no window, which is exactly the
       // situation it exists for - and it can be screenshotted and sent on.
-      if (!mainWindow) reportStartupFailureNatively();
+      if (!mainWindow && startHidden) showMainWindow();
+      else if (!mainWindow) reportStartupFailureNatively();
     } else {
       logger?.info('startup', 'all startup steps completed');
     }
+
+    // Hidden with no tray to come back through would be an application
+    // running with no way to reach it.
+    if (startHidden && !mainWindow && !tray?.isPresent) showMainWindow();
 
     // Only when explicitly asked on the command line; see resilience.ts.
     resilience?.scheduleCrashTestIfRequested();

@@ -202,3 +202,15 @@ body {
   font-size: 11px;
   color: var(--color-text-muted);
 }
+
+/* While updates are paused the widget's numbers are frozen, and a frozen
+   number that looks live is a wrong number, so it says so in the corner. */
+.widget-paused {
+  position: absolute;
+  top: 3px;
+  right: 8px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--color-warn);
+  pointer-events: none;
+}

@@ -67,6 +67,10 @@ export class AppTray {
   #onShowMainWindow: () => void;
   /** Top-level actions the tray menu carries, supplied by whoever owns them. */
   #actions: () => MenuItemConstructorOptions[];
+  /** The Options submenu, supplied by the settings controller. */
+  #options: () => MenuItemConstructorOptions[];
+  /** Updates are paused, so the icon and tooltip are a frozen reading. */
+  #paused = false;
   #iconPath: string | undefined;
   /** Pixel size of the notification area's icons on the primary display. */
   #iconSize = 16;
@@ -88,10 +92,12 @@ export class AppTray {
     settings: SettingsStore;
     onShowMainWindow: () => void;
     actions?: () => MenuItemConstructorOptions[];
+    options?: () => MenuItemConstructorOptions[];
     logger?: Logger | null;
   }) {
     this.#widget = options.widget;
     this.#actions = options.actions ?? (() => []);
+    this.#options = options.options ?? (() => []);
     this.#settings = options.settings;
     this.#onShowMainWindow = options.onShowMainWindow;
     this.#logger = options.logger ?? null;
@@ -133,7 +139,7 @@ export class AppTray {
     this.#tray.setContextMenu(
       Menu.buildFromTemplate(
         this.#widget.buildMenuTemplate('tray', {
-          options: this.#optionItems(),
+          options: this.#options(),
           actions: this.#actions(),
         }),
       ),
@@ -147,7 +153,7 @@ export class AppTray {
     this.#latest = readings;
 
     const tooltip = trayTooltip(readings);
-    if (tooltip !== this.#lastTooltip) {
+    if (!this.#paused && tooltip !== this.#lastTooltip) {
       this.#lastTooltip = tooltip;
       this.#tray.setToolTip(tooltip);
     }
@@ -214,15 +220,35 @@ export class AppTray {
     this.#lastFrameKey = '';
   }
 
-  #setLive(enabled: boolean): void {
-    this.#settings.updateTray({ liveIcon: enabled });
-    if (enabled && this.#latest) {
-      this.#lastFrameKey = '';
-      this.#draw(this.#latest);
-    } else if (!enabled) {
+  /** Whether the live icon can be drawn at all in this session. */
+  get liveIconAvailable(): boolean {
+    return this.#liveAvailable();
+  }
+
+  /** Show the live bars or the logo, whichever the settings now say. */
+  applyLiveIcon(): void {
+    if (this.#liveAvailable() && this.#settings.tray.liveIcon) {
+      if (this.#latest) {
+        this.#lastFrameKey = '';
+        this.#draw(this.#latest);
+      }
+    } else {
       this.#showLogo();
     }
     this.refreshMenu();
+  }
+
+  /**
+   * Mark the tray as showing a frozen reading, or live again. The bars stay as
+   * they were; the tooltip says why they are not moving.
+   */
+  setPaused(paused: boolean): void {
+    this.#paused = paused;
+    if (!this.#tray) return;
+    const readings = this.#latest ? trayTooltip(this.#latest) : 'Task Manager';
+    const tooltip = paused ? readings.replace(/^Task Manager/, 'Task Manager (updates paused)') : readings;
+    this.#lastTooltip = tooltip;
+    this.#tray.setToolTip(tooltip);
   }
 
   #resize(): void {
@@ -237,38 +263,6 @@ export class AppTray {
     }
   }
 
-  #optionItems(): MenuItemConstructorOptions[] {
-    const tray = this.#settings.tray;
-    const liveAvailable = this.#liveAvailable();
-    return [
-      {
-        label: liveAvailable ? 'Show usage in tray icon' : 'Show usage in tray icon (unavailable)',
-        type: 'checkbox',
-        enabled: liveAvailable,
-        checked: liveAvailable && tray.liveIcon,
-        click: () => this.#setLive(!tray.liveIcon),
-      },
-      {
-        label: 'Close to tray',
-        type: 'checkbox',
-        checked: tray.closeToTray,
-        click: () => {
-          this.#settings.updateTray({ closeToTray: !tray.closeToTray });
-          this.refreshMenu();
-        },
-      },
-      {
-        // Windows Task Manager's own wording for the same option.
-        label: 'Hide when minimized',
-        type: 'checkbox',
-        checked: tray.hideWhenMinimized,
-        click: () => {
-          this.#settings.updateTray({ hideWhenMinimized: !tray.hideWhenMinimized });
-          this.refreshMenu();
-        },
-      },
-    ];
-  }
 }
 
 /**

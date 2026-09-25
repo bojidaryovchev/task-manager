@@ -138,3 +138,12 @@ export function useFrozen<T>(live: T, frozen: boolean): T {
   if (!frozen) kept.current = live;
   return frozen ? kept.current : live;
 }
+
+/** Whether updates are paused, so a view can say its numbers are frozen. */
+export function usePaused(): boolean {
+  return useSyncExternalStore(
+    telemetryStore.subscribe,
+    () => telemetryStore.paused,
+    () => telemetryStore.paused,
+  );
+}

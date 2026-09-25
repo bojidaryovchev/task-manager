@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { app } from 'electron';
+import { UPDATE_INTERVALS_MS } from '@shared/app-settings.js';
 import {
   DEFAULT_PROCESS_COLUMNS,
   normaliseProcessColumns,
@@ -60,11 +61,23 @@ export interface ProcessSettings {
   columns: ProcessColumnId[];
 }
 
+export interface WindowSettings {
+  /** The main window stays above other windows. */
+  alwaysOnTop: boolean;
+}
+
+export interface SamplingSettings {
+  /** How often everything updates. Pausing is never saved. */
+  intervalMs: number;
+}
+
 export interface AppSettings {
   widget: WidgetSettings;
   history: HistorySettings;
   tray: TraySettings;
   processes: ProcessSettings;
+  window: WindowSettings;
+  sampling: SamplingSettings;
 }
 
 const DEFAULTS: AppSettings = {
@@ -76,9 +89,17 @@ const DEFAULTS: AppSettings = {
   // what the application is modelled on.
   tray: { liveIcon: true, hideWhenMinimized: true, closeToTray: true },
   processes: { confirmEnd: true, columns: [...DEFAULT_PROCESS_COLUMNS] },
+  window: { alwaysOnTop: false },
+  sampling: { intervalMs: UPDATE_INTERVALS_MS.fast },
 };
 
 const WRITE_DEBOUNCE_MS = 400;
+
+/** One of the offered update intervals, or the default for anything else. */
+function knownInterval(value: unknown): number {
+  const offered = Object.values(UPDATE_INTERVALS_MS);
+  return typeof value === 'number' && offered.includes(value) ? value : UPDATE_INTERVALS_MS.fast;
+}
 
 /** The codes this store can raise. */
 export type SettingsProblemCode = 'TM-4001' | 'TM-4002';
@@ -132,6 +153,28 @@ export class SettingsStore {
 
   get processes(): ProcessSettings {
     return this.#settings.processes;
+  }
+
+  get window(): WindowSettings {
+    return this.#settings.window;
+  }
+
+  get sampling(): SamplingSettings {
+    return this.#settings.sampling;
+  }
+
+  updateWindow(patch: Partial<WindowSettings>): WindowSettings {
+    const next = { ...this.#settings.window, ...patch };
+    this.#settings.window = { alwaysOnTop: next.alwaysOnTop === true };
+    this.#scheduleWrite();
+    return this.#settings.window;
+  }
+
+  updateSampling(patch: Partial<SamplingSettings>): SamplingSettings {
+    const next = { ...this.#settings.sampling, ...patch };
+    this.#settings.sampling = { intervalMs: knownInterval(next.intervalMs) };
+    this.#scheduleWrite();
+    return this.#settings.sampling;
   }
 
   updateProcesses(patch: Partial<ProcessSettings>): ProcessSettings {
@@ -192,6 +235,8 @@ export class SettingsStore {
         history?: { enabled?: unknown };
         tray?: { liveIcon?: unknown; hideWhenMinimized?: unknown; closeToTray?: unknown };
         processes?: { confirmEnd?: unknown; columns?: unknown };
+        window?: { alwaysOnTop?: unknown };
+        sampling?: { intervalMs?: unknown };
       };
       return {
         widget: normaliseWidgetSettings(source.widget),
@@ -207,6 +252,8 @@ export class SettingsStore {
           confirmEnd: source.processes?.confirmEnd !== false,
           columns: normaliseProcessColumns(source.processes?.columns),
         },
+        window: { alwaysOnTop: source.window?.alwaysOnTop === true },
+        sampling: { intervalMs: knownInterval(source.sampling?.intervalMs) },
       };
     } catch (error) {
       // Missing on first run, and unreadable or corrupt if something went wrong.
@@ -223,6 +270,8 @@ export class SettingsStore {
         history: { ...DEFAULTS.history },
         tray: { ...DEFAULTS.tray },
         processes: { ...DEFAULTS.processes, columns: [...DEFAULTS.processes.columns] },
+        window: { ...DEFAULTS.window },
+        sampling: { ...DEFAULTS.sampling },
       };
     }
   }

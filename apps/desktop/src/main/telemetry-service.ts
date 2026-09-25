@@ -42,6 +42,13 @@ export class TelemetryService {
    */
   #watchdog: NodeJS.Timeout | null = null;
   #onCollectorDeath: ((message: string) => void) | null = null;
+  /**
+   * Updates are paused: every window, the widget and the tray keep showing
+   * the snapshot from the moment of pausing. Collection carries on, and so
+   * does recording to history, so resuming loses nothing.
+   */
+  #paused = false;
+  #frozen: SystemSnapshot | null = null;
 
   constructor() {
     const native = loadNative();
@@ -75,7 +82,7 @@ export class TelemetryService {
     if (!this.#engine || this.#status.sampling) return;
     this.#engine.start((snapshot) => {
       this.#latest = snapshot;
-      this.#broadcast(snapshot);
+      if (!this.#paused) this.#broadcast(snapshot);
     });
     this.#status = { ...this.#status, sampling: true };
     this.#startWatchdog();
@@ -178,8 +185,26 @@ export class TelemetryService {
     };
   }
 
+  /** The snapshot on screen: the latest, or while paused, the frozen one. */
   get latestSnapshot(): SystemSnapshot | null {
-    return this.#latest;
+    return this.#paused ? this.#frozen : this.#latest;
+  }
+
+  get paused(): boolean {
+    return this.#paused;
+  }
+
+  /** Pause or resume what is shown. See `#paused`. */
+  setPaused(paused: boolean): void {
+    if (paused === this.#paused) return;
+    this.#paused = paused;
+    this.#frozen = paused ? this.#latest : null;
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+      window.webContents.send(IpcChannel.PausedEvent, paused);
+    }
+    // Resuming shows the present at once rather than on the next sample.
+    if (!paused && this.#latest) this.#broadcast(this.#latest);
   }
 
   get hostInfo(): HostInfo | null {

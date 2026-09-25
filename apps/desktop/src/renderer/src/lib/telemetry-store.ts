@@ -40,6 +40,7 @@ export class TelemetryStore {
   #hostInfo: HostInfo | null = null;
   #status: NativeStatus | null = null;
   #config: CollectorConfig | null = null;
+  #paused = false;
   #listeners = new Set<() => void>();
   #version = 0;
 
@@ -83,6 +84,16 @@ export class TelemetryStore {
     return this.#config;
   }
 
+  /** Updates are paused: what is on screen is a frozen reading. */
+  get paused(): boolean {
+    return this.#paused;
+  }
+
+  setPaused(paused: boolean): void {
+    this.#paused = paused;
+    this.#emit();
+  }
+
   /** Increments on every change; charts use it to know when to redraw. */
   get version(): number {
     return this.#version;
@@ -104,7 +115,15 @@ export class TelemetryStore {
   }
 
   ingest(snapshot: SystemSnapshot): void {
+    // The same sample can arrive twice - fetched again when the window comes
+    // back into view, or re-sent frozen while paused. Its values replace the
+    // current ones, but it is one point in time and adds one point to a chart.
+    const repeat = this.#snapshot?.sequence === snapshot.sequence;
     this.#snapshot = snapshot;
+    if (repeat) {
+      this.#emit();
+      return;
+    }
     this.system.push({
       cpuTimeUtilization: snapshot.cpu.aggregateTimeUtilizationPercent,
       cpuProcessorUtility: snapshot.cpu.processorUtilityPercent,

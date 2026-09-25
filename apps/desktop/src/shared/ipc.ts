@@ -5,6 +5,7 @@ import type {
   HostInfo,
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
+import type { AppSettingsView } from './app-settings.js';
 import type { ProcessMenuCommand, ProcessMenuRequest } from './process-actions.js';
 import type { ProcessColumnId } from './process-columns.js';
 import type { WidgetSettings } from './widget.js';
@@ -29,6 +30,15 @@ export const IpcChannel = {
   SetProcessSubscription: 'telemetry:setProcessSubscription',
   /** main -> renderer push: SystemSnapshot */
   SnapshotEvent: 'telemetry:snapshot',
+  /** main -> renderer push: boolean - updates were paused or resumed */
+  PausedEvent: 'telemetry:paused',
+
+  /** invoke: () => AppSettingsView */
+  GetAppSettings: 'settings:get',
+  /** invoke: (patch: Partial<AppSettingsView>) => AppSettingsView */
+  SetAppSettings: 'settings:set',
+  /** main -> renderer push: AppSettingsView - changed elsewhere, such as the tray */
+  AppSettingsEvent: 'settings:changed',
 
   /** invoke: () => WidgetSettings */
   GetWidgetSettings: 'widget:getSettings',
@@ -198,6 +208,15 @@ export interface TaskManagerApi {
   setProcessSubscription(wanted: boolean): Promise<void>;
   /** Subscribe to the canonical snapshot stream. Returns an unsubscribe function. */
   onSnapshot(listener: (snapshot: SystemSnapshot) => void): () => void;
+  /** Subscribe to updates being paused and resumed. */
+  onPaused(listener: (paused: boolean) => void): () => void;
+
+  // --- settings ------------------------------------------------------------
+  getAppSettings(): Promise<AppSettingsView>;
+  /** Apply a change. Resolves with the settings as they ended up. */
+  setAppSettings(patch: Partial<AppSettingsView>): Promise<AppSettingsView>;
+  /** Subscribe to settings changed elsewhere, such as from the tray menu. */
+  onAppSettings(listener: (settings: AppSettingsView) => void): () => void;
 
   // --- desktop widget ------------------------------------------------------
   getWidgetSettings(): Promise<WidgetSettings>;

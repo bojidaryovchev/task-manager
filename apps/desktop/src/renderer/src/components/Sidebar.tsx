@@ -15,6 +15,7 @@ export type PageId =
   | 'history'
   | 'widget'
   | 'export'
+  | 'settings'
   | 'debug';
 
 interface NavItem {
@@ -35,6 +36,7 @@ const ITEMS: NavItem[] = [
   { id: 'history', label: 'History', accent: 'var(--color-accent)' },
   { id: 'widget', label: 'Widget', accent: 'var(--color-disk)' },
   { id: 'export', label: 'Export', accent: 'var(--color-memory)' },
+  { id: 'settings', label: 'Settings', accent: 'var(--color-text-secondary)' },
   { id: 'debug', label: 'Debug telemetry', accent: 'var(--color-warn)' },
 ];
 

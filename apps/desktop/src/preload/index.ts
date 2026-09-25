@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { CollectorConfig, SystemSnapshot } from '@task-manager/telemetry-types';
 import { IpcChannel, type AppCommand, type TaskManagerApi } from '@shared/ipc';
+import type { AppSettingsView } from '@shared/app-settings';
 import type { ProcessMenuRequest } from '@shared/process-actions';
 import type { WidgetSettings } from '@shared/widget';
 
@@ -26,6 +27,28 @@ const api: TaskManagerApi = {
     ipcRenderer.on(IpcChannel.SnapshotEvent, handler);
     return () => {
       ipcRenderer.removeListener(IpcChannel.SnapshotEvent, handler);
+    };
+  },
+
+  onPaused: (listener: (paused: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, paused: boolean): void => {
+      listener(paused === true);
+    };
+    ipcRenderer.on(IpcChannel.PausedEvent, handler);
+    return () => {
+      ipcRenderer.removeListener(IpcChannel.PausedEvent, handler);
+    };
+  },
+  getAppSettings: () => ipcRenderer.invoke(IpcChannel.GetAppSettings),
+  setAppSettings: (patch: Partial<AppSettingsView>) =>
+    ipcRenderer.invoke(IpcChannel.SetAppSettings, patch),
+  onAppSettings: (listener: (settings: AppSettingsView) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, settings: AppSettingsView): void => {
+      listener(settings);
+    };
+    ipcRenderer.on(IpcChannel.AppSettingsEvent, handler);
+    return () => {
+      ipcRenderer.removeListener(IpcChannel.AppSettingsEvent, handler);
     };
   },
 

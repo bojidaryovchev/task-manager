@@ -290,6 +290,12 @@ it leaves the application running there with the window's memory released.
 Both are options in the tray menu, alongside the live icon itself. The tray is
 also the guaranteed way out of the widget's click-through mode.
 
+**Settings** — update speed (twice a second, every second, every four seconds)
+and Pause, which freezes everything on screen while measuring and history carry
+on; always on top; close to tray, hide when minimized and the live tray icon;
+start with Windows, straight into the tray; and whether to ask before ending a
+process. All of it is in the tray menu too.
+
 **Self-measurement** — per-subsystem collection cost, duty cycle, dropped
 snapshots, tracked identity count.
 

@@ -244,6 +244,36 @@ Both depend on the tray actually existing. If it failed to start (`TM-1010`),
 minimise and close behave normally, because otherwise the window would vanish
 with no way back but launching the application again.
 
+## Settings, pausing and starting with Windows
+
+The Settings page and the tray menu edit the same settings through one
+controller in the main process, which saves each change, applies it where it
+takes effect and announces it to every window and the tray, so the two can
+never disagree.
+
+**Pausing freezes what is shown, not what is measured.** While paused, every
+window, the widget and the tray keep the snapshot from the moment of pausing,
+each marked as paused and the main window saying from when. Collection and
+recording to history carry on, so resuming shows the present at once and the
+history has no gap. Checked on the running application: the snapshot on screen
+held at one sequence number for two seconds, then jumped seven ahead on
+resuming. A snapshot that reaches a window twice - fetched again when the
+window comes back into view, or re-sent frozen - replaces the values on screen
+but adds one point to a chart, not two.
+
+**Update speed** is the sampling interval: twice a second, every second or
+every four seconds. Every rate is averaged over the interval, so a slower speed
+also smooths the numbers. The finest history tier keeps every sample, so it
+has fewer recent points at slower speeds; the coarser tiers do not change.
+
+**Start with Windows** registers the portable executable, from the path its
+launcher passes down, to start at sign-in with `--hidden`, which opens straight
+into the tray. It is unavailable in the development build and in an elevated
+copy started by Restart as administrator: both run from a folder that does not
+outlive them, and registering that would leave a sign-in entry pointing at
+nothing. Starting hidden still opens the window when anything failed to start,
+or when there is no tray icon to come back through.
+
 ## One PDH query, one collection
 
 Disk, network, GPU, thermal zones and the two frequency-aware CPU counters all

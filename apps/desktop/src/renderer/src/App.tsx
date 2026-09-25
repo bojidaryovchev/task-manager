@@ -15,6 +15,8 @@ import { ExportPage } from './pages/Export.js';
 import { DiskPage, GpuPage, NetworkPage } from './pages/Devices.js';
 import { HistoryPage } from './pages/History.js';
 import { RunTaskDialog } from './components/RunTaskDialog.js';
+import { PausedBanner } from './components/PausedBanner.js';
+import { SettingsPage } from './pages/Settings.js';
 
 export function App(): React.JSX.Element {
   const [page, setPage] = useState<PageId>('overview');
@@ -54,6 +56,10 @@ export function App(): React.JSX.Element {
     })();
 
     const unsubscribe = api.onSnapshot((snapshot) => telemetryStore.ingest(snapshot));
+    const stopPaused = api.onPaused((paused) => telemetryStore.setPaused(paused));
+    void api.getAppSettings().then((settings) => {
+      if (!cancelled && settings) telemetryStore.setPaused(settings.paused);
+    });
 
     // The main process stops pushing to a hidden window, so re-prime on return
     // rather than waiting a full interval with stale values on screen.
@@ -68,6 +74,7 @@ export function App(): React.JSX.Element {
     return () => {
       cancelled = true;
       unsubscribe();
+      stopPaused();
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
@@ -81,6 +88,7 @@ export function App(): React.JSX.Element {
       <Sidebar current={page} onNavigate={setPage} />
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <StartupBanner />
+        <PausedBanner />
         {page === 'overview' && <OverviewPage />}
         {page === 'cpu' && <CpuPage />}
         {page === 'memory' && <MemoryPage />}
@@ -92,6 +100,7 @@ export function App(): React.JSX.Element {
         {page === 'history' && <HistoryPage />}
         {page === 'widget' && <WidgetSettingsPage />}
         {page === 'export' && <ExportPage />}
+        {page === 'settings' && <SettingsPage />}
         {page === 'debug' && <DebugPage />}
       </main>
       {runTask && <RunTaskDialog onClose={() => setRunTask(false)} />}

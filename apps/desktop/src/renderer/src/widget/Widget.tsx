@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { WidgetSettings } from '@shared/widget';
 import { telemetryStore } from '../lib/telemetry-store.js';
-import { useNativeStatus } from '../lib/hooks.js';
+import { useNativeStatus, usePaused } from '../lib/hooks.js';
 import { MinimalLayout } from './layouts/MinimalLayout.js';
 import { CompactLayout } from './layouts/CompactLayout.js';
 import { PerformanceLayout } from './layouts/PerformanceLayout.js';
@@ -18,6 +18,7 @@ import { TopConsumersLayout } from './layouts/TopConsumersLayout.js';
 export function Widget(): React.JSX.Element | null {
   const [settings, setSettings] = useState<WidgetSettings | null>(null);
   const status = useNativeStatus();
+  const paused = usePaused();
 
   useEffect(() => {
     const api = window.taskManager;
@@ -37,11 +38,16 @@ export function Widget(): React.JSX.Element | null {
 
     const stopSnapshots = api.onSnapshot((snapshot) => telemetryStore.ingest(snapshot));
     const stopSettings = api.onWidgetSettings((next) => setSettings(next));
+    const stopPaused = api.onPaused((paused) => telemetryStore.setPaused(paused));
+    void api.getAppSettings().then((app) => {
+      if (!cancelled && app) telemetryStore.setPaused(app.paused);
+    });
 
     return () => {
       cancelled = true;
       stopSnapshots();
       stopSettings();
+      stopPaused();
     };
   }, []);
 
@@ -80,6 +86,7 @@ export function Widget(): React.JSX.Element | null {
       ) : (
         <LayoutFor settings={settings} />
       )}
+      {paused && <div className="widget-paused">PAUSED</div>}
     </div>
   );
 }
