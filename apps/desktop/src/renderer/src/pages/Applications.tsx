@@ -11,6 +11,7 @@ import {
 import { Note, PageShell } from '../components/primitives.js';
 import { useCtrlHeld, useFrozen, useTelemetry } from '../lib/hooks.js';
 import { ProcessDetails } from '../components/ProcessDetails.js';
+import { AffinityDialog, type AffinityRequest } from '../components/AffinityDialog.js';
 
 const EMPTY: ProcessSnapshot[] = [];
 
@@ -40,6 +41,7 @@ export function ApplicationsPage(): React.JSX.Element {
   const [descending, setDescending] = useState(true);
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   const [selected, setSelected] = useState<ProcessSnapshot | null>(null);
+  const [affinity, setAffinity] = useState<AffinityRequest | null>(null);
 
   // This page needs the process list; grouping is derived from it.
   useEffect(() => {
@@ -106,7 +108,11 @@ export function ApplicationsPage(): React.JSX.Element {
   const onProcessMenu = useCallback((process: ProcessSnapshot, event: React.MouseEvent) => {
     event.preventDefault();
     setSelected(process);
-    void window.taskManager.showProcessMenu({ keys: [process.key], context: 'applications' });
+    void window.taskManager
+      .showProcessMenu({ keys: [process.key], context: 'applications' })
+      .then((command) => {
+        if (command?.kind === 'affinity') setAffinity(command);
+      });
   }, []);
 
   return (
@@ -189,6 +195,7 @@ export function ApplicationsPage(): React.JSX.Element {
         </div>
         {selected && <ProcessDetails process={selected} onClose={() => setSelected(null)} />}
       </div>
+      {affinity && <AffinityDialog request={affinity} onClose={() => setAffinity(null)} />}
 
       <Note>
         Grouping is deliberately conservative and uses only what Windows reports: package identity

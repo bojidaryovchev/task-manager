@@ -517,6 +517,39 @@ export interface JsProcessState {
    * Absent when it cannot be read.
    */
   priorityClass?: 'idle' | 'belowNormal' | 'normal' | 'aboveNormal' | 'high' | 'realtime'
+  /**
+   * Whether it is set to run as EcoQoS, which is what Efficiency mode sets.
+   * Absent when that cannot be read.
+   */
+  efficiencyMode?: boolean
+  /** The logical processors it may run on, by index. Absent when unreadable. */
+  affinity?: Array<number>
+  /** The logical processors the system offers it, by index. */
+  processors?: Array<number>
+}
+
+/**
+ * The result of changing a setting of a process, with what Windows actually
+ * applied read back afterwards, since that is not always what was asked for.
+ */
+export interface JsSettingOutcome {
+  outcome: 'done' | 'notRunning' | 'identityChanged' | 'accessDenied' | 'failed'
+  win32Error?: number
+  priorityClass?: 'idle' | 'belowNormal' | 'normal' | 'aboveNormal' | 'high' | 'realtime'
+  efficiencyMode?: boolean
+  affinity?: Array<number>
+}
+
+/** What became of restarting Windows Explorer. */
+export interface JsShellOutcome {
+  /**
+   * `restarted` (Windows brought the shell back by itself), `started` (it
+   * did not, so a new one was started), `notStarted` (it did not, and
+   * starting one was not allowed), `noShell` (no shell was running),
+   * `accessDenied` or `failed`.
+   */
+  outcome: 'restarted' | 'started' | 'notStarted' | 'noShell' | 'accessDenied' | 'failed'
+  win32Error?: number
 }
 
 export interface JsSystemSnapshot {
@@ -617,6 +650,41 @@ export declare function processImagePath(pid: number): string | null
  * means the application will not come back by itself.
  */
 export declare function registerForRestart(commandLine: string): boolean
+
+/**
+ * Restart the Windows shell: end the Explorer that owns the taskbar, and see
+ * that a new one takes its place.
+ *
+ * Windows restarts the shell by itself when it ends unexpectedly (Winlogon's
+ * `AutoRestartShell`, which is on unless someone turned it off). If no shell
+ * has appeared after a few seconds, a new Explorer is started - but only when
+ * `start_if_missing` is true. The caller passes false when running as
+ * administrator, because an Explorer started from an elevated process runs
+ * elevated, and so would everything launched from the taskbar afterwards.
+ */
+export declare function restartShell(startIfMissing: boolean): Promise<JsShellOutcome>
+
+/**
+ * Turn Efficiency mode on or off, as Windows Task Manager defines it: low
+ * priority and EcoQoS on, or both undone.
+ *
+ * Off hands the power decision back to Windows rather than forcing full speed,
+ * and restores `restore_priority` - the class the process had before - or
+ * normal when that is not known.
+ */
+export declare function setEfficiencyMode(key: string, enabled: boolean, restorePriority?: 'idle' | 'belowNormal' | 'normal' | 'aboveNormal' | 'high' | 'realtime'): JsSettingOutcome
+
+/** Restrict a process to the given logical processors, by index. */
+export declare function setProcessAffinity(key: string, processors: Array<number>): JsSettingOutcome
+
+/**
+ * Set a process's priority class, by name.
+ *
+ * Windows may apply a different class than asked for - realtime becomes high
+ * for a caller without the privilege to raise it that far - so the class in
+ * effect afterwards is read back and returned.
+ */
+export declare function setProcessPriority(key: string, priorityClass: 'idle' | 'belowNormal' | 'normal' | 'aboveNormal' | 'high' | 'realtime'): JsSettingOutcome
 
 /**
  * Show the Windows Properties dialog for a file, as Explorer does.

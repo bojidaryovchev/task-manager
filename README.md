@@ -207,7 +207,8 @@ as core equivalent), private working set, working set, private commit, peak
 working set, pools, virtual size, page and hard faults, threads, handles,
 cumulative and per-second I/O. Flat and tree views, with subtree totals for the
 metrics that are actually additive. Right-click for End task, End process tree,
-Close window, Switch to, Open file location, Properties, Search online and Copy;
+Close window, Switch to, Set priority, Efficiency mode, Set affinity, Restart
+(for Windows Explorer), Open file location, Properties, Search online and Copy;
 select several with Ctrl or Shift, end them with Delete, and hold Ctrl to freeze
 the list while you aim, as in Windows Task Manager. Every action checks the
 process's start time as well as its PID, so it can never reach a different

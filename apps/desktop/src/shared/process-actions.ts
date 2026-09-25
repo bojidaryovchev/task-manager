@@ -37,6 +37,24 @@ export interface ProcessState {
   /** It is the Windows shell: the Explorer that owns the taskbar. */
   isShell: boolean;
   priorityClass?: PriorityClassName;
+  /** Whether it runs as EcoQoS, which is what Efficiency mode sets. */
+  efficiencyMode?: boolean;
+  /** The logical processors it may run on, by index. */
+  affinity?: number[];
+  /** The logical processors the system offers it, by index. */
+  processors?: number[];
+}
+
+/**
+ * What changing a setting did, with what Windows actually applied read back:
+ * the priority class in effect can differ from the one asked for.
+ */
+export interface SettingOutcome {
+  outcome: 'done' | 'notRunning' | 'identityChanged' | 'accessDenied' | 'failed';
+  win32Error?: number;
+  priorityClass?: PriorityClassName;
+  efficiencyMode?: boolean;
+  affinity?: number[];
 }
 
 export type ActionOutcomeName =
@@ -81,7 +99,19 @@ export interface ProcessMenuRequest {
  * Something the page carries out itself once the menu has closed, because it
  * is about what the page shows rather than about the process.
  */
-export type ProcessMenuCommand = { kind: 'goToParent'; key: string } | null;
+export type ProcessMenuCommand =
+  | { kind: 'goToParent'; key: string }
+  | {
+      /** Open the affinity dialog, which the page draws. */
+      kind: 'affinity';
+      key: string;
+      name: string;
+      /** Every logical processor the process could be given, by index. */
+      processors: number[];
+      /** The ones it may use now. */
+      current: number[];
+    }
+  | null;
 
 /** Upper bound on how many processes one request may name. */
 export const MAX_KEYS_PER_REQUEST = 2_000;
@@ -124,4 +154,11 @@ export function readProcessMenuRequest(value: unknown): ProcessMenuRequest | nul
     context: candidate.context,
     ...(typeof name === 'string' && name.trim() !== '' ? { applicationName: name } : {}),
   };
+}
+
+/** Accept a list of logical processor indices from a renderer, or null. */
+export function readProcessorIndices(value: unknown): number[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) return null;
+  if (!value.every((index) => Number.isInteger(index) && index >= 0 && index < 64)) return null;
+  return [...new Set(value as number[])].sort((a, b) => a - b);
 }

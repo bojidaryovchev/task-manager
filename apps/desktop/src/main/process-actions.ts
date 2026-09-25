@@ -3,6 +3,7 @@ import { BrowserWindow, clipboard, dialog, Menu, shell } from 'electron';
 import type { ProcessSnapshot, SystemSnapshot } from '@task-manager/telemetry-types';
 import type {
   ActionOutcome,
+  PriorityClassName,
   ProcessMenuCommand,
   ProcessMenuRequest,
   ProcessState,
@@ -13,10 +14,15 @@ import {
   buildProcessMenu,
   codeLines,
   confirmEnding,
+  confirmRealtime,
+  confirmShellRestart,
   descendantsOf,
   endingCode,
+  priorityLabel,
   reportClosing,
   reportEnding,
+  reportSetting,
+  reportShellRestart,
   reportSwitching,
   type EndKind,
   type MenuTarget,
@@ -80,6 +86,12 @@ export class ProcessActions {
    * application, and an answer meant for one question could land on the other.
    */
   #busy = false;
+  /**
+   * The priority each process had before this application put it in
+   * Efficiency mode, so turning the mode off can put it back. Forgotten once
+   * restored; a process that exits in the meantime leaves one small entry.
+   */
+  #priorityBefore = new Map<string, PriorityClassName>();
 
   constructor(host: ProcessActionsHost) {
     this.#host = host;
@@ -156,6 +168,29 @@ export class ProcessActions {
         goToParent: () => {
           if (parent) resolve({ kind: 'goToParent', key: parent.key });
         },
+        setPriority: (priority) =>
+          void this.#exclusive('set priority', () =>
+            this.#setPriority(window, representative, priority),
+          ),
+        setEfficiency: (enabled) =>
+          void this.#exclusive('efficiency mode', () =>
+            this.#setEfficiency(window, representative, targets[0]!.state, enabled),
+          ),
+        restartShell: () =>
+          void this.#exclusive('restart Windows Explorer', () => this.#restartShell(window)),
+        affinity: () => {
+          const { processors, affinity } = targets[0]!.state;
+          if (!processors || !affinity) return;
+          // The page draws the dialog; the change comes back through
+          // setAffinity, which checks everything again.
+          resolve({
+            kind: 'affinity',
+            key: representative.key,
+            name: representative.name,
+            processors,
+            current: affinity,
+          });
+        },
       },
     );
 
@@ -190,8 +225,126 @@ export class ProcessActions {
     await this.#end(window, chosen.length > 1 ? 'several' : 'task', chosen, undefined);
   }
 
+  /**
+   * Restrict a process to some logical processors, from the dialog a page
+   * drew after the menu asked for it.
+   */
+  setAffinity(window: BrowserWindow | null, key: string, processors: number[]): Promise<void> {
+    return this.#exclusive('set affinity', async () => {
+      const native = this.#host.native();
+      const process = this.#processes().find((candidate) => candidate.key === key);
+      if (!native || !process) return;
+      const outcome = native.setProcessAffinity(key, processors);
+      if (outcome.outcome === 'done') {
+        this.#host.logger?.info(
+          'process',
+          `limited ${process.name} (PID ${process.pid}) to logical processors ${(outcome.affinity ?? processors).join(', ')}`,
+        );
+      }
+      await this.#report(window, reportSetting(process, outcome, this.#host.elevated()));
+    });
+  }
+
   #processes(): ProcessSnapshot[] {
     return this.#host.latestSnapshot()?.processes?.processes ?? [];
+  }
+
+  async #setPriority(
+    window: BrowserWindow | null,
+    process: ProcessSnapshot,
+    priority: PriorityClassName,
+  ): Promise<void> {
+    const native = this.#host.native();
+    if (!native) return;
+    if (priority === 'realtime') {
+      const question = confirmRealtime(process);
+      const answer = await this.#ask(window, {
+        type: 'warning',
+        title: 'Task Manager',
+        message: question.message,
+        detail: question.detail,
+        buttons: [question.confirm, 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      });
+      this.#host.logger?.info(
+        'process',
+        `${answer.response === 0 ? 'confirmed' : 'cancelled'}: ${question.message}`,
+      );
+      if (answer.response !== 0) return;
+    }
+    const outcome = native.setProcessPriority(process.key, priority);
+    if (outcome.outcome === 'done' && outcome.priorityClass) {
+      this.#host.logger?.info(
+        'process',
+        `set ${process.name} (PID ${process.pid}) to ${priorityLabel(outcome.priorityClass)} priority`,
+      );
+    }
+    await this.#report(window, reportSetting(process, outcome, this.#host.elevated(), priority));
+  }
+
+  async #setEfficiency(
+    window: BrowserWindow | null,
+    process: ProcessSnapshot,
+    state: ProcessState,
+    enabled: boolean,
+  ): Promise<void> {
+    const native = this.#host.native();
+    if (!native) return;
+    // Efficiency mode lowers the priority; turning it off puts back whatever
+    // was there before, when this application is the one that changed it.
+    if (enabled && state.priorityClass) this.#priorityBefore.set(process.key, state.priorityClass);
+    const restore = enabled ? undefined : (this.#priorityBefore.get(process.key) ?? null);
+    const outcome = native.setEfficiencyMode(process.key, enabled, restore);
+    if (outcome.outcome === 'done') {
+      if (!enabled) this.#priorityBefore.delete(process.key);
+      this.#host.logger?.info(
+        'process',
+        `efficiency mode ${enabled ? 'on' : 'off'} for ${process.name} (PID ${process.pid})`,
+      );
+    }
+    await this.#report(window, reportSetting(process, outcome, this.#host.elevated()));
+  }
+
+  async #restartShell(window: BrowserWindow | null): Promise<void> {
+    const native = this.#host.native();
+    if (!native) return;
+    const question = confirmShellRestart();
+    const answer = await this.#ask(window, {
+      type: 'warning',
+      title: 'Task Manager',
+      message: question.message,
+      detail: question.detail,
+      buttons: [question.confirm, 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+    this.#host.logger?.info(
+      'process',
+      `${answer.response === 0 ? 'confirmed' : 'cancelled'}: ${question.message}`,
+    );
+    if (answer.response !== 0) return;
+    // Elevated, a new Explorer would run elevated and so would everything
+    // started from the taskbar, so then only Windows may bring it back.
+    const result = await native.restartShell(!this.#host.elevated());
+    if (result.outcome === 'restarted' || result.outcome === 'started') {
+      this.#host.logger?.info(
+        'process',
+        result.outcome === 'restarted'
+          ? 'restarted Windows Explorer; Windows brought the shell back'
+          : 'restarted Windows Explorer; started a new shell after Windows did not',
+      );
+    }
+    await this.#report(window, reportShellRestart(result.outcome, result.win32Error));
+  }
+
+  /** Log and show a report, when there is one. */
+  async #report(window: BrowserWindow | null, report: Report | null): Promise<void> {
+    if (!report) return;
+    if (report.code) this.#host.logger?.warn(report.code, report.message);
+    await this.#show(window, report);
   }
 
   async #exclusive(name: string, run: () => Promise<void>): Promise<void> {

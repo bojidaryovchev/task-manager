@@ -1,10 +1,13 @@
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ProcessSnapshot } from '@task-manager/telemetry-types';
 import { describeErrorCode, type ErrorCode } from '@shared/error-codes.js';
+import type { ShellOutcome } from './native.js';
 import type {
   ActionOutcome,
+  PriorityClassName,
   ProcessMenuContext,
   ProcessState,
+  SettingOutcome,
 } from '@shared/process-actions.js';
 
 /**
@@ -46,6 +49,25 @@ export interface ProcessMenuHandlers {
   searchOnline(): void;
   copy(text: string): void;
   goToParent(): void;
+  setPriority(priority: PriorityClassName): void;
+  setEfficiency(enabled: boolean): void;
+  affinity(): void;
+  restartShell(): void;
+}
+
+/** Windows Task Manager's order and names for the priority classes. */
+export const PRIORITY_MENU: readonly (readonly [PriorityClassName, string])[] = [
+  ['realtime', 'Realtime'],
+  ['high', 'High'],
+  ['aboveNormal', 'Above normal'],
+  ['normal', 'Normal'],
+  ['belowNormal', 'Below normal'],
+  ['idle', 'Low'],
+];
+
+/** The name a person reads for a priority class. */
+export function priorityLabel(priority: PriorityClassName): string {
+  return PRIORITY_MENU.find(([value]) => value === priority)?.[1] ?? priority;
 }
 
 /** Build the menu. */
@@ -79,6 +101,11 @@ export function buildProcessMenu(
     );
   }
 
+  // Windows Task Manager's one restart: the shell, which is what people
+  // restart when the taskbar or the desktop stops responding.
+  if (single?.state.isShell && single.state.canEnd) {
+    items.push({ label: 'Restart', click: handlers.restartShell });
+  }
   items.push(endItem(model, handlers));
   if (single && model.descendants.length > 0 && model.context === 'processes') {
     items.push({
@@ -86,6 +113,10 @@ export function buildProcessMenu(
       enabled: single.state.isCritical !== true,
       click: handlers.endTree,
     });
+  }
+
+  if (single && single.state.status === 'running') {
+    items.push({ type: 'separator' }, ...tuningItems(single, model, handlers));
   }
 
   const representative = single?.process ?? (model.applicationName ? targets[0]!.process : null);
@@ -115,6 +146,45 @@ export function buildProcessMenu(
     );
   }
   return items;
+}
+
+/** Priority, Efficiency mode and affinity, for one process. */
+function tuningItems(
+  target: MenuTarget,
+  model: ProcessMenuModel,
+  handlers: ProcessMenuHandlers,
+): MenuItemConstructorOptions[] {
+  const { process, state } = target;
+  const refused = !state.canAdjust;
+  const why = refused ? (model.elevated ? ' (Windows refuses)' : ' (needs administrator)') : '';
+  // Windows Task Manager greys Efficiency mode out for what it calls core
+  // Windows processes. Critical processes and everything in session 0, where
+  // services run, are treated the same way here.
+  const partOfWindows = state.isCritical === true || process.sessionId === 0;
+  return [
+    {
+      label: `Set priority${why}`,
+      enabled: !refused && state.priorityClass !== undefined,
+      submenu: PRIORITY_MENU.map(([value, label]) => ({
+        label,
+        type: 'radio' as const,
+        checked: state.priorityClass === value,
+        click: () => handlers.setPriority(value),
+      })),
+    },
+    {
+      label: partOfWindows ? 'Efficiency mode (part of Windows)' : `Efficiency mode${why}`,
+      type: 'checkbox',
+      checked: state.efficiencyMode === true,
+      enabled: !refused && !partOfWindows && state.efficiencyMode !== undefined,
+      click: () => handlers.setEfficiency(state.efficiencyMode !== true),
+    },
+    {
+      label: `Set affinity…${why}`,
+      enabled: !refused && state.processors !== undefined && state.affinity !== undefined,
+      click: handlers.affinity,
+    },
+  ];
 }
 
 function endItem(model: ProcessMenuModel, handlers: ProcessMenuHandlers): MenuItemConstructorOptions {
@@ -504,6 +574,101 @@ export function reportSwitching(process: ProcessSnapshot, outcome: ActionOutcome
       return goneReport(process, outcome);
     default:
       return failedReport(process, outcome);
+  }
+}
+
+/** What to ask before restarting Windows Explorer. */
+export function confirmShellRestart(): Confirmation {
+  return {
+    message: 'Restart Windows Explorer?',
+    detail:
+      'The taskbar, the desktop and every open File Explorer window close, and come back a few seconds later. Programs you have open are not affected.',
+    confirm: 'Restart',
+    offerDontAsk: false,
+  };
+}
+
+/** What to tell the user after restarting Explorer, or null when it came back. */
+export function reportShellRestart(outcome: ShellOutcome['outcome'], win32Error?: number): Report | null {
+  switch (outcome) {
+    case 'restarted':
+    case 'started':
+      return null;
+    case 'noShell':
+      return {
+        type: 'info',
+        message: 'Windows Explorer is not running as the shell right now.',
+        detail: 'There was no taskbar to restart.',
+        offerElevation: false,
+      };
+    case 'accessDenied':
+      return {
+        type: 'warning',
+        message: "Windows won't let Task Manager restart Explorer.",
+        detail: codeLines('TM-0001'),
+        code: 'TM-0001',
+        offerElevation: false,
+      };
+    default:
+      return {
+        type: 'warning',
+        message: 'Windows Explorer did not come back.',
+        detail: `${win32Error === undefined ? '' : `Windows error ${win32Error}.\n\n`}${codeLines('TM-0013')}`,
+        code: 'TM-0013',
+        offerElevation: false,
+      };
+  }
+}
+
+/** What to ask before running a process at realtime priority. */
+export function confirmRealtime(process: ProcessSnapshot): Confirmation {
+  return {
+    message: `Run ${process.name} at realtime priority?`,
+    detail:
+      "A realtime process runs ahead of every other process, Windows' own included. Microsoft's documentation warns that one busy for more than a moment can stop the mouse from responding and disk caches from flushing.",
+    confirm: 'Use realtime',
+    offerDontAsk: false,
+  };
+}
+
+/**
+ * What to tell the user after changing a process's priority, Efficiency mode
+ * or affinity, or null when it simply worked.
+ *
+ * `asked` is the priority that was asked for, when one was: Windows can apply
+ * a lower one, and saying nothing would leave the user believing otherwise.
+ */
+export function reportSetting(
+  process: ProcessSnapshot,
+  outcome: SettingOutcome,
+  elevated: boolean,
+  asked?: PriorityClassName,
+): Report | null {
+  switch (outcome.outcome) {
+    case 'done':
+      if (asked && outcome.priorityClass && outcome.priorityClass !== asked) {
+        return {
+          type: 'info',
+          message: `Windows applied ${priorityLabel(outcome.priorityClass)} instead of ${priorityLabel(asked)}.`,
+          detail: `${asked === 'realtime' ? 'Realtime priority needs a privilege only administrators hold. ' : ''}${process.name} is now running at ${priorityLabel(outcome.priorityClass)} priority.\n\n${codeLines('TM-0012')}`,
+          code: 'TM-0012',
+          offerElevation: asked === 'realtime' && !elevated,
+        };
+      }
+      return null;
+    case 'accessDenied':
+      return {
+        type: 'warning',
+        message: `Windows won't let Task Manager change ${process.name}.`,
+        detail: `${process.name} runs with more privileges than Task Manager${elevated ? '' : ', which is running without administrator rights'}.\n\n${codeLines('TM-0001')}`,
+        code: 'TM-0001',
+        offerElevation: !elevated,
+      };
+    case 'notRunning':
+    case 'identityChanged':
+      return goneReport(process, { outcome: outcome.outcome });
+    default:
+      return failedReport(process, { outcome: 'failed', win32Error: outcome.win32Error });
   }
 }
 

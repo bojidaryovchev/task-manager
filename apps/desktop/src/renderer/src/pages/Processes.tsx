@@ -21,6 +21,7 @@ import {
 import { PageShell } from '../components/primitives.js';
 import { useCtrlHeld, useFrozen, useHostInfo, useTelemetry } from '../lib/hooks.js';
 import { ProcessDetails } from '../components/ProcessDetails.js';
+import { AffinityDialog, type AffinityRequest } from '../components/AffinityDialog.js';
 import {
   clickSelection,
   contextSelection,
@@ -147,6 +148,7 @@ export function ProcessesPage(): React.JSX.Element {
   // A request to scroll a row into view. The nonce makes asking twice for the
   // same row scroll twice, which a bare key could not.
   const [reveal, setReveal] = useState<{ key: string; nonce: number } | null>(null);
+  const [affinity, setAffinity] = useState<AffinityRequest | null>(null);
 
   // Typing must not block the 500 ms snapshot pipeline on a 1000-row re-filter.
   const deferredQuery = useDeferredValue(query);
@@ -280,6 +282,7 @@ export function ProcessesPage(): React.JSX.Element {
       if (keys.length === 0) return;
       void window.taskManager.showProcessMenu({ keys, context: 'processes' }).then((command) => {
         if (command?.kind === 'goToParent') goTo(command.key);
+        if (command?.kind === 'affinity') setAffinity(command);
       });
     },
     [goTo],
@@ -484,6 +487,7 @@ export function ProcessesPage(): React.JSX.Element {
           <ProcessDetails process={detailed} onClose={() => select(EMPTY_SELECTION)} />
         )}
       </div>
+      {affinity && <AffinityDialog request={affinity} onClose={() => setAffinity(null)} />}
     </PageShell>
   );
 }

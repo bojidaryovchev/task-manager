@@ -9,7 +9,12 @@ import type {
   HostInfo,
   SystemSnapshot,
 } from '@task-manager/telemetry-types';
-import type { ActionOutcome, ProcessState } from '@shared/process-actions.js';
+import type {
+  ActionOutcome,
+  PriorityClassName,
+  ProcessState,
+  SettingOutcome,
+} from '@shared/process-actions.js';
 
 /**
  * The native telemetry module, as N-API generates it.
@@ -45,6 +50,25 @@ export interface NativeTelemetryModule {
   bringProcessToFront(key: string): ActionOutcome;
   /** Show Windows' Properties dialog for a file. False when it could not. */
   showFileProperties(path: string): boolean;
+  /** Set a priority class. The class Windows actually applied is read back. */
+  setProcessPriority(key: string, priorityClass: PriorityClassName): SettingOutcome;
+  /**
+   * Efficiency mode, as Windows Task Manager defines it: low priority and
+   * EcoQoS. Off hands the power decision back to Windows and restores
+   * `restorePriority`, or normal when that is not known.
+   */
+  setEfficiencyMode(
+    key: string,
+    enabled: boolean,
+    restorePriority?: PriorityClassName | null,
+  ): SettingOutcome;
+  /** Restrict a process to the given logical processors, by index. */
+  setProcessAffinity(key: string, processors: number[]): SettingOutcome;
+  /**
+   * End the Explorer that owns the taskbar and see a new one take its place,
+   * starting it only when `startIfMissing` allows.
+   */
+  restartShell(startIfMissing: boolean): Promise<ShellOutcome>;
 
   // --- running as administrator ----------------------------------------------
   /**
@@ -56,6 +80,12 @@ export interface NativeTelemetryModule {
   enableDebugPrivilege(): boolean;
   /** The executable a process is running, when it can be read. */
   processImagePath(pid: number): string | null;
+}
+
+/** What became of restarting Windows Explorer. */
+export interface ShellOutcome {
+  outcome: 'restarted' | 'started' | 'notStarted' | 'noShell' | 'accessDenied' | 'failed';
+  win32Error?: number;
 }
 
 /** What became of a request to run something as administrator. */

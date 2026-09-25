@@ -4,6 +4,7 @@ import {
   MAX_KEYS_PER_REQUEST,
   readProcessKeys,
   readProcessMenuRequest,
+  readProcessorIndices,
 } from './process-actions.js';
 
 /**
@@ -31,6 +32,22 @@ describe('process keys', () => {
 
   it('drops duplicates', () => {
     expect(readProcessKeys(['8:1', '8:1', '12:1'])).toEqual(['8:1', '12:1']);
+  });
+});
+
+describe('processor lists from the affinity dialog', () => {
+  it('accepts indices, sorted and without repeats', () => {
+    expect(readProcessorIndices([3, 1, 1, 0])).toEqual([0, 1, 3]);
+  });
+
+  it('refuses an empty list, since a process must be allowed somewhere', () => {
+    expect(readProcessorIndices([])).toBeNull();
+  });
+
+  it('refuses anything that is not a processor index', () => {
+    for (const bad of [[-1], [64], [1.5], ['0'], [null], 'all', null]) {
+      expect(readProcessorIndices(bad), JSON.stringify(bad)).toBeNull();
+    }
   });
 });
 

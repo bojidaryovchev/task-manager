@@ -19,10 +19,12 @@ use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_ACCESS_DENIED, FILETIME, HANDLE, STILL_ACTIVE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::System::Threading::{
-    GetExitCodeProcess, GetPriorityClass, GetProcessTimes, IsProcessCritical, OpenProcess,
-    SetPriorityClass, TerminateProcess, WaitForSingleObject, PROCESS_ACCESS_RIGHTS,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION, PROCESS_SYNCHRONIZE,
-    PROCESS_TERMINATE,
+    GetExitCodeProcess, GetPriorityClass, GetProcessAffinityMask, GetProcessInformation,
+    GetProcessTimes, IsProcessCritical, OpenProcess, ProcessPowerThrottling, SetPriorityClass,
+    SetProcessAffinityMask, SetProcessInformation, TerminateProcess, WaitForSingleObject,
+    PROCESS_ACCESS_RIGHTS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+    PROCESS_POWER_THROTTLING_STATE, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+    PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
 };
 
 /// Access to end a process and then wait to see that it did end.
@@ -167,6 +169,86 @@ impl Process {
             Err(unsafe { GetLastError() })
         }
     }
+
+    /// The process's power throttling state as `(control, state)` masks, or
+    /// `None` when Windows will not say.
+    ///
+    /// A mechanism appears in `control` only when someone has set it
+    /// explicitly; everything else is left to Windows' own heuristics.
+    pub fn power_throttling(&self) -> Option<(u32, u32)> {
+        let mut throttling = PROCESS_POWER_THROTTLING_STATE {
+            Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            ControlMask: 0,
+            StateMask: 0,
+        };
+        // SAFETY: the structure is the size passed, and `Version` is set as the
+        // documentation requires; the handle has query access.
+        let ok = unsafe {
+            GetProcessInformation(
+                self.handle,
+                ProcessPowerThrottling,
+                (&mut throttling as *mut PROCESS_POWER_THROTTLING_STATE).cast(),
+                std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+            )
+        };
+        (ok != 0).then_some((throttling.ControlMask, throttling.StateMask))
+    }
+
+    /// Set the power throttling masks. `(0, 0)` hands the decision back to
+    /// Windows. Needs `ACCESS_ADJUST`.
+    pub fn set_power_throttling(&self, control: u32, state: u32) -> Result<(), u32> {
+        let throttling = PROCESS_POWER_THROTTLING_STATE {
+            Version: PROCESS_POWER_THROTTLING_CURRENT_VERSION,
+            ControlMask: control,
+            StateMask: state,
+        };
+        // SAFETY: the structure is the size passed; the handle was opened with
+        // PROCESS_SET_INFORMATION.
+        let ok = unsafe {
+            SetProcessInformation(
+                self.handle,
+                ProcessPowerThrottling,
+                (&throttling as *const PROCESS_POWER_THROTTLING_STATE).cast(),
+                std::mem::size_of::<PROCESS_POWER_THROTTLING_STATE>() as u32,
+            )
+        };
+        if ok != 0 {
+            Ok(())
+        } else {
+            // SAFETY: reading the calling thread's last error code.
+            Err(unsafe { GetLastError() })
+        }
+    }
+
+    /// The processors this process may run on, and the ones the system has, as
+    /// bit masks over the process's processor group.
+    pub fn affinity(&self) -> Option<(usize, usize)> {
+        let (mut process, mut system) = (0usize, 0usize);
+        // SAFETY: two valid out-pointers; the handle has query access.
+        let ok = unsafe { GetProcessAffinityMask(self.handle, &mut process, &mut system) };
+        (ok != 0).then_some((process, system))
+    }
+
+    /// Restrict the process to the processors in `mask`. Needs `ACCESS_ADJUST`.
+    pub fn set_affinity(&self, mask: usize) -> Result<(), u32> {
+        // SAFETY: the handle was opened with PROCESS_SET_INFORMATION.
+        if unsafe { SetProcessAffinityMask(self.handle, mask) } != 0 {
+            Ok(())
+        } else {
+            // SAFETY: reading the calling thread's last error code.
+            Err(unsafe { GetLastError() })
+        }
+    }
+}
+
+/// Open whichever process has `pid` right now.
+///
+/// Only for a PID read from Windows a moment ago, such as the owner of the
+/// taskbar window: the identity check then compares against the creation time
+/// read here, which can only fail if the process was replaced in between.
+pub fn open_live(pid: u32, access: PROCESS_ACCESS_RIGHTS) -> Result<Process, Refusal> {
+    let created = creation_time_of(pid).ok_or(Refusal::NotRunning)?;
+    Process::open(pid, created, access)
 }
 
 /// Whether Windows would grant `access` to `pid`, without keeping the handle.
@@ -316,6 +398,37 @@ mod tests {
             Process::open(0xFFFF_FFF1, 0, ACCESS_QUERY).err(),
             Some(Refusal::NotRunning)
         );
+    }
+
+    #[test]
+    fn turns_efficiency_mode_on_and_hands_it_back_to_windows() {
+        use windows_sys::Win32::System::Threading::PROCESS_POWER_THROTTLING_EXECUTION_SPEED as SPEED;
+        let mut child = helper();
+        let pid = child.id();
+        let process = Process::open(pid, snapshot_creation_time(pid), ACCESS_ADJUST).expect("open");
+        // A fresh process has nothing set explicitly.
+        assert_eq!(process.power_throttling(), Some((0, 0)));
+        process.set_power_throttling(SPEED, SPEED).expect("on");
+        assert_eq!(process.power_throttling(), Some((SPEED, SPEED)));
+        process.set_power_throttling(0, 0).expect("back to Windows");
+        assert_eq!(process.power_throttling(), Some((0, 0)));
+        child.kill().ok();
+        child.wait().ok();
+    }
+
+    #[test]
+    fn narrows_affinity_and_reads_it_back() {
+        let mut child = helper();
+        let pid = child.id();
+        let process = Process::open(pid, snapshot_creation_time(pid), ACCESS_ADJUST).expect("open");
+        let (current, system) = process.affinity().expect("affinity");
+        // A fresh process may run anywhere.
+        assert_eq!(current, system);
+        let lowest = system.isolate_lowest_one();
+        process.set_affinity(lowest).expect("narrow");
+        assert_eq!(process.affinity().map(|(mask, _)| mask), Some(lowest));
+        child.kill().ok();
+        child.wait().ok();
     }
 
     #[test]

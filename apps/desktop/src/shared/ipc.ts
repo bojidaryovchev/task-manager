@@ -60,6 +60,8 @@ export const IpcChannel = {
   EndProcesses: 'process:end',
   /** invoke: () => void - restart as administrator, through the Windows prompt */
   RestartAsAdministrator: 'app:restartAsAdministrator',
+  /** invoke: (key, processors: number[]) => void - from the affinity dialog */
+  SetProcessAffinity: 'process:setAffinity',
 
   /** invoke: () => DiagnosticsInfo */
   GetDiagnostics: 'diagnostics:get',
@@ -237,6 +239,12 @@ export interface TaskManagerApi {
    * declining leaves everything as it was.
    */
   restartAsAdministrator(): Promise<void>;
+  /**
+   * Restrict a process to some logical processors, from the affinity dialog.
+   * The main process checks the process and the processors again, and reports
+   * anything Windows refuses.
+   */
+  setProcessAffinity(key: string, processors: number[]): Promise<void>;
 
   // --- diagnostics ---------------------------------------------------------
   /** Where the logs live and what has crashed recently. */

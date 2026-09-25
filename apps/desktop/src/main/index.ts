@@ -4,7 +4,12 @@ import { release } from 'node:os';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { CollectorConfig } from '@task-manager/telemetry-types';
 import { IpcChannel, type DiagnosticsInfo, type StartupFailure } from '@shared/ipc';
-import { readProcessKeys, readProcessMenuRequest } from '@shared/process-actions.js';
+import {
+  isProcessKey,
+  readProcessKeys,
+  readProcessMenuRequest,
+  readProcessorIndices,
+} from '@shared/process-actions.js';
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
 import { CRASH_LIMITS, CrashGuard } from './crash-guard.js';
@@ -268,6 +273,11 @@ function registerIpc(service: TelemetryService, controller: WidgetController): v
     return processActions.showMenu(BrowserWindow.fromWebContents(event.sender), valid);
   });
   ipcMain.handle(IpcChannel.RestartAsAdministrator, () => restartElevated());
+  ipcMain.handle(IpcChannel.SetProcessAffinity, (event, key: unknown, processors: unknown) => {
+    const valid = readProcessorIndices(processors);
+    if (!isProcessKey(key) || !valid || !processActions) return;
+    return processActions.setAffinity(BrowserWindow.fromWebContents(event.sender), key, valid);
+  });
   ipcMain.handle(IpcChannel.EndProcesses, (event, keys: unknown) => {
     const valid = readProcessKeys(keys);
     if (!valid || !processActions) return;

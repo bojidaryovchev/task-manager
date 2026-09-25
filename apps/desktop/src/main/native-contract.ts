@@ -23,10 +23,12 @@ import type {
   JsHostInfo,
   JsLaunchOutcome,
   JsProcessState,
+  JsSettingOutcome,
+  JsShellOutcome,
   JsSystemSnapshot,
 } from '@task-manager/telemetry-native';
-import type { ActionOutcome, ProcessState } from '@shared/process-actions.js';
-import type { LaunchOutcome } from './native.js';
+import type { ActionOutcome, ProcessState, SettingOutcome } from '@shared/process-actions.js';
+import type { LaunchOutcome, ShellOutcome } from './native.js';
 import type {
   CollectorConfig,
   HistoryPoint,
@@ -60,5 +62,9 @@ type _ActionOutcomeIsDescribed = AssignableTo<JsActionOutcome, ActionOutcome>;
 type _ActionOutcomeIsProduced = AssignableTo<ActionOutcome, JsActionOutcome>;
 type _LaunchOutcomeIsDescribed = AssignableTo<JsLaunchOutcome, LaunchOutcome>;
 type _LaunchOutcomeIsProduced = AssignableTo<LaunchOutcome, JsLaunchOutcome>;
+type _SettingOutcomeIsDescribed = AssignableTo<JsSettingOutcome, SettingOutcome>;
+type _SettingOutcomeIsProduced = AssignableTo<SettingOutcome, JsSettingOutcome>;
+type _ShellOutcomeIsDescribed = AssignableTo<JsShellOutcome, ShellOutcome>;
+type _ShellOutcomeIsProduced = AssignableTo<ShellOutcome, JsShellOutcome>;
 
 export {};

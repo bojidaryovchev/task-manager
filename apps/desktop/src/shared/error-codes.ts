@@ -151,6 +151,21 @@ export const ERROR_CODES = {
     action:
       'Usually a security policy removed the privilege from administrators. Nothing else is affected.',
   },
+  'TM-0012': {
+    subsystem: 'actions',
+    title: 'Windows applied a lower priority than the one asked for',
+    meaning:
+      'The priority change went through, but Windows chose a lower class than requested. Realtime becomes High for any application without the privilege to raise a process that far, which only administrators hold. The dialog says which class is now in effect.',
+    action: 'Restart Task Manager as administrator if realtime is really what you need.',
+  },
+  'TM-0013': {
+    subsystem: 'actions',
+    title: 'Windows Explorer did not come back',
+    meaning:
+      'Explorer was ended so it could restart, but no new taskbar appeared. Windows did not restart it by itself, and Task Manager either could not start one or would not: running as administrator, an Explorer it started would run as administrator too, and so would everything opened from the taskbar afterwards.',
+    action:
+      'Signing out and back in brings Explorer back. So does running explorer.exe from a program that is not running as administrator.',
+  },
 
   // --- 1xxx startup ---------------------------------------------------------
   'TM-1001': {

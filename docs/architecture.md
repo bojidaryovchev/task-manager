@@ -465,6 +465,45 @@ The restart hands over in a fixed order, each step there for a reason:
    checking that it really is this process's parent. The next launch empties
    the folder before unpacking, so nothing is left behind for long.
 
+### Priority, Efficiency mode and affinity
+
+**Priority** uses Windows Task Manager's six classes and order. Whatever is
+asked for, the class in effect afterwards is read back and shown when it
+differs: without the privilege to raise a process that far, Windows applies
+High when Realtime is requested, which a test confirms. Realtime asks first,
+quoting the warning in Microsoft's documentation that a realtime process busy
+for more than a moment can stop the mouse responding and disk caches flushing.
+
+**Efficiency mode** is what Microsoft says Windows Task Manager does: base
+priority down to low, and the process tagged EcoQoS through
+`SetProcessInformation(ProcessPowerThrottling)`. On a hybrid processor Windows
+then schedules it on the efficient cores and at the most efficient frequency.
+Turning it off hands the power decision back to Windows (both masks zero, as
+the documentation describes, rather than forcing full speed) and restores the
+priority the process had before, when this application is what changed it.
+Whether a process is in Efficiency mode is read from Windows, not remembered: a
+test confirms `GetProcessInformation` reports the state back, so programs that
+put their own background processes into it show as such. It is not offered for
+services and critical processes, which Task Manager greys out as core Windows
+processes.
+
+**Affinity** is chosen in a dialog listing every logical processor the
+process could use. On a hybrid processor each is marked P or E from the
+efficiency class Windows reports for its core, with shortcuts for performance
+or efficient cores only. All three settings last until the process exits.
+
+### Restarting Windows Explorer
+
+For the Explorer that owns the taskbar, the menu offers Restart, as Windows
+Task Manager does. It ends that process and waits for a new shell: Windows
+restarts the shell by itself when it ends unexpectedly (Winlogon's
+`AutoRestartShell`, set to 1 on the development machine). If no taskbar has
+appeared after eight seconds, a new Explorer is started - but never from an
+elevated copy of this application, because that Explorer would run as
+administrator, and so would everything opened from the taskbar afterwards.
+This has not been exercised on the development machine, because it closes
+every open File Explorer window.
+
 ### Which windows are a program's windows
 
 Close and Switch to act on the windows a program has on the taskbar, using

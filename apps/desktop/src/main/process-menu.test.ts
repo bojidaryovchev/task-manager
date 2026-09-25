@@ -5,10 +5,13 @@ import type { ProcessState } from '@shared/process-actions.js';
 import {
   buildProcessMenu,
   confirmEnding,
+  confirmRealtime,
   descendantsOf,
   describeForClipboard,
   reportClosing,
   reportEnding,
+  reportSetting,
+  reportShellRestart,
   reportSwitching,
   type MenuTarget,
   type ProcessMenuHandlers,
@@ -84,6 +87,10 @@ function handlers(): ProcessMenuHandlers {
     searchOnline: vi.fn(),
     copy: vi.fn(),
     goToParent: vi.fn(),
+    setPriority: vi.fn(),
+    setEfficiency: vi.fn(),
+    affinity: vi.fn(),
+    restartShell: vi.fn(),
   };
 }
 
@@ -190,6 +197,86 @@ describe('the process menu', () => {
     const copy = item(menu, 'Copy').submenu as MenuItemConstructorOptions[];
     item(copy, 'PID').click?.({} as never, undefined, {} as never);
     expect(calls.copy).toHaveBeenCalledWith('4242');
+  });
+});
+
+describe('priority, Efficiency mode and affinity', () => {
+  it("lists the priorities in Task Manager's order, with the current one ticked", () => {
+    const menu = buildProcessMenu(model([target({}, { priorityClass: 'high' })]), handlers());
+    const submenu = item(menu, 'Set priority').submenu as MenuItemConstructorOptions[];
+    expect(labels(submenu)).toEqual(['Realtime', 'High', 'Above normal', 'Normal', 'Below normal', 'Low']);
+    expect(submenu.filter((entry) => entry.checked).map((entry) => entry.label)).toEqual(['High']);
+  });
+
+  it('ticks Efficiency mode when it is on, and turns it off from there', () => {
+    const calls = handlers();
+    const menu = buildProcessMenu(model([target({}, { efficiencyMode: true })]), calls);
+    const efficiency = item(menu, 'Efficiency mode');
+    expect(efficiency.checked).toBe(true);
+    efficiency.click?.({} as never, undefined, {} as never);
+    expect(calls.setEfficiency).toHaveBeenCalledWith(false);
+  });
+
+  it('keeps Efficiency mode away from services and parts of Windows, as Task Manager does', () => {
+    const menu = buildProcessMenu(
+      model([target({ sessionId: 0 }, { efficiencyMode: false })]),
+      handlers(),
+    );
+    expect(item(menu, 'Efficiency mode (part of Windows)').enabled).toBe(false);
+  });
+
+  it('says when changing a process needs administrator', () => {
+    const menu = buildProcessMenu(model([target({}, { canAdjust: false })]), handlers());
+    expect(item(menu, 'Set priority (needs administrator)').enabled).toBe(false);
+    expect(item(menu, 'Set affinity… (needs administrator)').enabled).toBe(false);
+  });
+
+  it('offers affinity only when the processors could be read', () => {
+    const readable = buildProcessMenu(
+      model([target({}, { affinity: [0, 1], processors: [0, 1, 2, 3] })]),
+      handlers(),
+    );
+    expect(item(readable, 'Set affinity…').enabled).toBe(true);
+    const unreadable = buildProcessMenu(model([target()]), handlers());
+    expect(item(unreadable, 'Set affinity…').enabled).toBe(false);
+  });
+
+  it('asks before realtime, and says why it is dangerous', () => {
+    const asked = confirmRealtime(process({ name: 'game.exe' }));
+    expect(asked.message).toBe('Run game.exe at realtime priority?');
+    expect(asked.detail).toContain('mouse');
+  });
+
+  it('says so when Windows applies a lower priority than asked', () => {
+    const report = reportSetting(
+      process(),
+      { outcome: 'done', priorityClass: 'high' },
+      false,
+      'realtime',
+    );
+    expect(report?.code).toBe('TM-0012');
+    expect(report?.message).toBe('Windows applied High instead of Realtime.');
+    expect(report?.offerElevation).toBe(true);
+    expect(reportSetting(process(), { outcome: 'done', priorityClass: 'high' }, false, 'high')).toBeNull();
+  });
+
+  it('explains a refused change and offers administrator', () => {
+    const report = reportSetting(process(), { outcome: 'accessDenied' }, false);
+    expect(report?.code).toBe('TM-0001');
+    expect(report?.offerElevation).toBe(true);
+  });
+});
+
+describe('restarting Windows Explorer', () => {
+  it('is offered for the shell, and only the shell', () => {
+    expect(labels(buildProcessMenu(model([target({}, { isShell: true })]), handlers()))).toContain('Restart');
+    expect(labels(buildProcessMenu(model([target()]), handlers()))).not.toContain('Restart');
+  });
+
+  it('is quiet when the shell comes back, and explains when it does not', () => {
+    expect(reportShellRestart('restarted')).toBeNull();
+    expect(reportShellRestart('started')).toBeNull();
+    expect(reportShellRestart('notStarted')?.code).toBe('TM-0013');
   });
 });
 
