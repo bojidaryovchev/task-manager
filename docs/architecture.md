@@ -284,6 +284,17 @@ outlive them, and registering that would leave a sign-in entry pointing at
 nothing. Starting hidden still opens the window when anything failed to start,
 or when there is no tray icon to come back through.
 
+The switch is on the Startup apps page too, and the entry it makes is in that
+page's list, marked as this app. Electron writes it as the current user's Run
+value named after the AppUserModelID, `dev.taskmanager.app`, and turns it on
+by deleting its StartupApproved value (`SetLoginItemSettings` in
+`browser_win.cc`); it reads it back as on when that value is absent or starts
+`02`, off for `03`. Those are the forms the Startup apps page reads and writes,
+so switching the entry there is switching the setting, and every window and
+the tray are told. Checked with the packaged build against the real registry,
+then put back: on, off and on again from the list, and off from the switch,
+which removed both values.
+
 ## One PDH query, one collection
 
 Disk, network, GPU, thermal zones and the two frequency-aware CPU counters all

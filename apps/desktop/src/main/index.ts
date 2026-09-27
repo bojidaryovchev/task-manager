@@ -18,7 +18,7 @@ import {
   readProcessorIndices,
 } from '@shared/process-actions.js';
 import { readServiceMenuRequest } from '@shared/services.js';
-import { readStartupItemId } from '@shared/startup.js';
+import { APP_USER_MODEL_ID, readStartupItemId } from '@shared/startup.js';
 import type { ErrorCode } from '@shared/error-codes.js';
 import type { WidgetSettings } from '@shared/widget.js';
 import { ActionGate } from './action-gate.js';
@@ -584,7 +584,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showMainWindow());
 
   void app.whenReady().then(() => {
-    step('TM-1001', 'app id', () => app.setAppUserModelId('dev.taskmanager.app'));
+    step('TM-1001', 'app id', () => app.setAppUserModelId(APP_USER_MODEL_ID));
 
     // The window comes first, before anything that can fail. Whatever else goes
     // wrong below, there is something on screen to say so - which is the whole
@@ -640,6 +640,8 @@ if (!app.requestSingleInstanceLock()) {
       logger,
       restartElevated,
       gate,
+      // Its own entry may be the one switched, which is Start with Windows.
+      changed: () => appSettings?.announce(),
     });
     if (settings) {
       const store = settings;

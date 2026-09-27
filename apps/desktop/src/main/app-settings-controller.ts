@@ -96,12 +96,21 @@ export class AppSettingsController {
       if (patch.liveTrayIcon !== undefined) tray?.applyLiveIcon();
     }
 
+    return this.announce();
+  }
+
+  /**
+   * Tell every window and the tray the settings as they are now: after a
+   * change here, or one made elsewhere to something a setting reads, such as
+   * this application's entry switched on the Startup apps page.
+   */
+  announce(): AppSettingsView {
     const view = this.get();
     for (const window of BrowserWindow.getAllWindows()) {
       if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
       window.webContents.send(IpcChannel.AppSettingsEvent, view);
     }
-    tray?.refreshMenu();
+    this.#host.tray()?.refreshMenu();
     return view;
   }
 

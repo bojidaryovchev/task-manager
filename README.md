@@ -248,7 +248,9 @@ enabled, and since when it has been disabled. Right-click, or use the button,
 to enable or disable one; entries for every user need administrator rights,
 and say so. Windows keeps the on or off setting in a registry format it does
 not document, so only the forms seen in practice are read, and anything else
-shows as Unknown. Store apps that start themselves are not listed.
+shows as Unknown. Store apps that start themselves are not listed. The switch
+at the top starts Task Manager itself when you sign in, straight into the tray;
+it is listed as this app once on, and is the same setting as in Settings.
 
 **GPU** — adapters from DXGI joined to the Windows GPU counter sets by LUID:
 per-adapter utilisation (the maximum across engine types, never a sum),

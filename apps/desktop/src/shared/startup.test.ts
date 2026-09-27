@@ -1,5 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import { isMachineWide, readStartupItemId, startupDisplayName } from './startup.js';
+import {
+  APP_USER_MODEL_ID,
+  isMachineWide,
+  isThisApp,
+  readStartupItemId,
+  startupDisplayName,
+} from './startup.js';
+
+describe("this application's own entry", () => {
+  it('is the current user’s Run value named after the app id, and only that', () => {
+    expect(isThisApp({ source: 'userRun', name: APP_USER_MODEL_ID })).toBe(true);
+    expect(isThisApp({ source: 'machineRun', name: APP_USER_MODEL_ID })).toBe(false);
+    expect(isThisApp({ source: 'userRun', name: 'Steam' })).toBe(false);
+  });
+
+  it('is shown as Task Manager, whatever the launcher calls itself', () => {
+    expect(
+      startupDisplayName({
+        source: 'userRun',
+        name: APP_USER_MODEL_ID,
+        command: '"C:\\Tools\\TaskManager-0.1.0-x64.exe" --hidden',
+        programExists: true,
+        description: 'Task Manager desktop application',
+        status: 'enabled',
+        thisApp: true,
+      }),
+    ).toBe('Task Manager');
+  });
+});
 
 describe('startup entry ids from a renderer', () => {
   it('accepts a known source and a name', () => {

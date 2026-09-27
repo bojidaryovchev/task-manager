@@ -5,6 +5,14 @@
  * change it; the main process owns the menu, the write and the report.
  */
 
+/**
+ * This application's identity with Windows. Its own startup entry is the
+ * current user's Run value of this name: Electron names the value after the
+ * AppUserModelID when it registers the app to start at sign-in
+ * (`Browser::SetLoginItemSettings`, `browser_win.cc`).
+ */
+export const APP_USER_MODEL_ID = 'dev.taskmanager.app';
+
 /** Where a startup entry is registered. */
 export type StartupSource = 'userRun' | 'machineRun' | 'machineRun32' | 'userFolder' | 'commonFolder';
 
@@ -51,6 +59,8 @@ export interface StartupItem {
   disabledAtUnixMs?: number;
   /** The first byte of Windows' record, when there is one. */
   approvalFlag?: number;
+  /** It is this application's own entry. Set by the main process. */
+  thisApp?: boolean;
 }
 
 /** What became of turning an entry on or off. */
@@ -89,5 +99,11 @@ export function readStartupItemId(value: unknown): StartupItemId | null {
 
 /** The name to show for an entry: its program's own name, when it has one. */
 export function startupDisplayName(item: StartupItem): string {
+  if (item.thisApp) return 'Task Manager';
   return item.description?.trim() || item.name;
+}
+
+/** Whether an entry is this application's own. */
+export function isThisApp(item: Pick<StartupItem, 'source' | 'name'>): boolean {
+  return item.source === 'userRun' && item.name === APP_USER_MODEL_ID;
 }

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { BrowserWindow, clipboard, Menu, shell } from 'electron';
 import {
+  isThisApp,
   startupDisplayName,
   type StartupItem,
   type StartupItemId,
@@ -21,6 +22,8 @@ export interface StartupActionsHost {
   logger: Logger | null;
   restartElevated?: () => void;
   gate: ActionGate;
+  /** Something was switched: settings that read the same record should say so. */
+  changed?: () => void;
 }
 
 const MENU_SETTLE_MS = 250;
@@ -32,9 +35,11 @@ export class StartupActions {
     this.#host = host;
   }
 
-  /** Every startup entry, read now. */
+  /** Every startup entry, read now, with this application's own marked. */
   list(): StartupItem[] {
-    return this.#host.native()?.listStartupItems() ?? [];
+    return (this.#host.native()?.listStartupItems() ?? []).map((item) =>
+      isThisApp(item) ? { ...item, thisApp: true } : item,
+    );
   }
 
   /**
@@ -90,6 +95,7 @@ export class StartupActions {
       if (outcome.outcome === 'done') {
         changed = true;
         this.#host.logger?.info('startup', `${enabled ? 'enabled' : 'disabled'} ${described}`);
+        this.#host.changed?.();
         return;
       }
       const report = reportStartupChange(item, enabled, outcome, this.#host.elevated());

@@ -4,6 +4,7 @@ import {
   startupDisplayName,
   type StartupItem,
 } from '@shared/startup';
+import type { AppSettingsView } from '@shared/app-settings';
 import { PageShell } from '../components/primitives.js';
 
 /**
@@ -72,6 +73,20 @@ export function StartupPage(): React.JSX.Element {
   const load = useCallback(() => {
     void window.taskManager.getStartupItems().then(setItems);
   }, []);
+
+  // Start with Windows is this application's own entry in the list below, so
+  // the list is read again whenever the setting changes, from anywhere.
+  const [startWithWindows, setStartWithWindows] = useState<boolean | null | undefined>(undefined);
+  useEffect(() => {
+    const take = (settings: AppSettingsView | null): void => {
+      if (settings) setStartWithWindows(settings.startWithWindows);
+    };
+    void window.taskManager.getAppSettings().then(take);
+    return window.taskManager.onAppSettings(take);
+  }, []);
+  useEffect(() => {
+    if (startWithWindows !== undefined) load();
+  }, [startWithWindows, load]);
 
   useEffect(() => {
     load();
@@ -197,75 +212,100 @@ export function StartupPage(): React.JSX.Element {
         </button>
       }
     >
-      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
-        <div className="shrink-0 overflow-hidden border-b border-border-subtle bg-surface-2">
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        <label
+          className={`flex shrink-0 items-start gap-2.5 rounded-lg border border-border-subtle bg-surface-1 px-4 py-3 ${
+            startWithWindows === null ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={startWithWindows === true}
+            disabled={startWithWindows === null || startWithWindows === undefined}
+            onChange={(event) =>
+              void window.taskManager.setAppSettings({ startWithWindows: event.target.checked })
+            }
+            className="mt-0.5 accent-accent"
+          />
+          <span className="min-w-0">
+            <span className="text-[12px] font-medium">Start Task Manager when you sign in</span>
+            <span className="block text-[11px] leading-snug text-text-muted">
+              {startWithWindows === null
+                ? 'Only the packaged Task Manager, started normally rather than as administrator, can register itself to start with Windows.'
+                : 'Straight into the tray, without a window in front of you. It is listed below as Task Manager once it is on, and can be switched there too. The same setting is in Settings.'}
+            </span>
+          </span>
+        </label>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-subtle bg-surface-1">
+          <div className="shrink-0 overflow-hidden border-b border-border-subtle bg-surface-2">
+            <div
+              style={{ minWidth: TABLE_WIDTH }}
+              className="flex text-[11px] font-medium text-text-secondary"
+            >
+              <HeaderCell
+                label="Name"
+                definition="The program's own name for itself, from its version information, then the name it is registered under."
+                active={sortKey === 'name'}
+                descending={descending}
+                onClick={() => onSort('name')}
+                grow
+              />
+              {COLUMNS.map((column) =>
+                column.id === 'command' ? (
+                  <div
+                    key={column.id}
+                    title={column.definition}
+                    style={{ width: column.width }}
+                    className="shrink-0 px-2 py-1.5"
+                  >
+                    {column.label}
+                  </div>
+                ) : (
+                  <HeaderCell
+                    key={column.id}
+                    label={column.label}
+                    definition={column.definition}
+                    width={column.width}
+                    active={sortKey === column.id}
+                    descending={descending}
+                    onClick={() => onSort(column.id as SortKey)}
+                  />
+                ),
+              )}
+            </div>
+          </div>
           <div
-            style={{ minWidth: TABLE_WIDTH }}
-            className="flex text-[11px] font-medium text-text-secondary"
+            role="listbox"
+            aria-label="Startup apps"
+            tabIndex={0}
+            onKeyDown={onKeyDown}
+            onScroll={(event) => {
+              const header = event.currentTarget.previousElementSibling;
+              if (header) header.scrollLeft = event.currentTarget.scrollLeft;
+            }}
+            className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-dim"
           >
-            <HeaderCell
-              label="Name"
-              definition="The program's own name for itself, from its version information, then the name it is registered under."
-              active={sortKey === 'name'}
-              descending={descending}
-              onClick={() => onSort('name')}
-              grow
-            />
-            {COLUMNS.map((column) =>
-              column.id === 'command' ? (
-                <div
-                  key={column.id}
-                  title={column.definition}
-                  style={{ width: column.width }}
-                  className="shrink-0 px-2 py-1.5"
-                >
-                  {column.label}
-                </div>
-              ) : (
-                <HeaderCell
-                  key={column.id}
-                  label={column.label}
-                  definition={column.definition}
-                  width={column.width}
-                  active={sortKey === column.id}
-                  descending={descending}
-                  onClick={() => onSort(column.id as SortKey)}
+            <div style={{ minWidth: TABLE_WIDTH }}>
+              {sorted.map((item) => (
+                <StartupRow
+                  key={idOf(item)}
+                  item={item}
+                  selected={idOf(item) === selected}
+                  onClick={() => setSelected(idOf(item))}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setSelected(idOf(item));
+                    openMenu(item);
+                  }}
                 />
-              ),
+              ))}
+            </div>
+            {items && items.length === 0 && (
+              <div className="p-6 text-center text-xs text-text-muted">
+                Nothing is set to start when you sign in.
+              </div>
             )}
           </div>
-        </div>
-        <div
-          role="listbox"
-          aria-label="Startup apps"
-          tabIndex={0}
-          onKeyDown={onKeyDown}
-          onScroll={(event) => {
-            const header = event.currentTarget.previousElementSibling;
-            if (header) header.scrollLeft = event.currentTarget.scrollLeft;
-          }}
-          className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-dim"
-        >
-          <div style={{ minWidth: TABLE_WIDTH }}>
-            {sorted.map((item) => (
-              <StartupRow
-                key={idOf(item)}
-                item={item}
-                selected={idOf(item) === selected}
-                onClick={() => setSelected(idOf(item))}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setSelected(idOf(item));
-                  openMenu(item);
-                }}
-              />
-            ))}
-          </div>
-          {items && items.length === 0 && (
-            <div className="p-6 text-center text-xs text-text-muted">
-              Nothing is set to start when you sign in.
-            </div>
-          )}
         </div>
       </div>
     </PageShell>
@@ -344,6 +384,11 @@ function StartupRow({
         >
           {name}
         </span>
+        {item.thisApp && (
+          <span className="shrink-0 rounded border border-accent-dim/60 px-1 text-[10px] leading-4 text-accent">
+            this app
+          </span>
+        )}
         {name !== item.name && (
           <span className="min-w-0 shrink-4 truncate text-[11px] text-text-muted">{item.name}</span>
         )}
