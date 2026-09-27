@@ -280,23 +280,6 @@ pub fn query(class: i32, initial_capacity: usize) -> Result<Vec<u8>, NTSTATUS> {
     Err(STATUS_INFO_LENGTH_MISMATCH)
 }
 
-fn parse_processor_performance(buffer: &[u8]) -> Vec<SystemProcessorPerformanceInformation> {
-    let entry_size = std::mem::size_of::<SystemProcessorPerformanceInformation>();
-    let count = buffer.len() / entry_size;
-    let mut out = Vec::with_capacity(count);
-    for i in 0..count {
-        // SAFETY: `(i + 1) * entry_size <= buffer.len()` by construction of
-        // `count`; `read_unaligned` tolerates any alignment of the source.
-        let value = unsafe {
-            std::ptr::read_unaligned(
-                buffer.as_ptr().add(i * entry_size) as *const SystemProcessorPerformanceInformation
-            )
-        };
-        out.push(value);
-    }
-    out
-}
-
 /// Query per-processor performance information for one processor group.
 ///
 /// `NtQuerySystemInformation` alone only reports the processors in the calling
@@ -334,15 +317,53 @@ pub fn query_processor_performance_for_group(
 }
 
 /// Query per-processor performance information for the calling thread group.
+///
+/// Windows accepts only a buffer that holds a whole number of entries, and
+/// fills as many as fit. Any other length fails with
+/// `STATUS_INFO_LENGTH_MISMATCH`, however large: checked on Windows 11 with 24
+/// processors, 1200 and 1248 bytes succeed and 2048 and 4096 fail, while one
+/// entry's worth succeeds with one processor. So the buffer has room for 64
+/// entries - a processor group's most, and this reports the caller's group -
+/// or the expected count if more, and is resized to the length Windows reports
+/// if that is ever refused. It used to go through `query`, whose 1024-byte
+/// minimum and doubling produce no multiple of 48 at all, so every machine
+/// with fewer than 22 logical processors had no CPU reading.
 pub fn query_processor_performance(
     logical_processor_count: usize,
 ) -> Result<Vec<SystemProcessorPerformanceInformation>, NTSTATUS> {
+    let Some(func) = ntdll().query else {
+        return Err(STATUS_NOT_IMPLEMENTED);
+    };
     let entry_size = std::mem::size_of::<SystemProcessorPerformanceInformation>();
-    let buffer = query(
-        SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS,
-        entry_size * logical_processor_count.max(1),
-    )?;
-    Ok(parse_processor_performance(&buffer))
+    let mut entries = logical_processor_count.max(64);
+    // A second attempt is enough: the first says how many there are.
+    for _ in 0..3 {
+        let mut out = vec![SystemProcessorPerformanceInformation::default(); entries];
+        let mut return_length: u32 = 0;
+        // SAFETY: the buffer holds exactly `entries` entries and we pass its
+        // true byte length, so the kernel cannot write past the end.
+        let status = unsafe {
+            func(
+                SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS,
+                out.as_mut_ptr() as *mut c_void,
+                (entry_size * entries) as u32,
+                &mut return_length,
+            )
+        };
+        if status == STATUS_SUCCESS {
+            out.truncate((return_length as usize / entry_size).min(entries));
+            return Ok(out);
+        }
+        if status != STATUS_INFO_LENGTH_MISMATCH {
+            return Err(status);
+        }
+        let needed = (return_length as usize).div_ceil(entry_size);
+        if needed == 0 || needed == entries {
+            return Err(status);
+        }
+        entries = needed;
+    }
+    Err(STATUS_INFO_LENGTH_MISMATCH)
 }
 
 /// Query the free / zero / modified / standby page breakdown.
@@ -543,10 +564,42 @@ mod tests {
     }
 
     #[test]
-    fn parsing_a_truncated_processor_buffer_yields_whole_entries_only() {
+    fn reads_every_processor_whatever_count_it_is_first_given() {
+        let real = std::thread::available_parallelism().map_or(1, |n| n.get());
+        // Too few, the usual laptop counts, exact, and too many: every one
+        // must come back with every processor. Before this was fixed, a count
+        // below 22 on any machine produced a 1024-byte request that Windows
+        // refused forever.
+        for count in [1, 2, 4, 8, real, real + 7] {
+            let values = query_processor_performance(count).expect("query");
+            assert_eq!(values.len(), real, "asked for {count}");
+            assert!(values
+                .iter()
+                .all(|value| value.kernel_time >= value.idle_time));
+        }
+    }
+
+    #[test]
+    fn windows_refuses_a_buffer_that_is_not_whole_entries() {
+        // The behaviour the query above works around, pinned so a change in
+        // Windows would be noticed.
+        let func = ntdll().query.expect("NtQuerySystemInformation");
         let entry_size = std::mem::size_of::<SystemProcessorPerformanceInformation>();
-        let buffer = vec![0u8; entry_size * 2 + 7];
-        assert_eq!(parse_processor_performance(&buffer).len(), 2);
+        let real = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let length = entry_size * (real + 2) + 16;
+        let mut buffer = vec![0u8; length];
+        let mut return_length = 0u32;
+        // SAFETY: the buffer holds `length` bytes and that is what we pass.
+        let status = unsafe {
+            func(
+                SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION_CLASS,
+                buffer.as_mut_ptr() as *mut c_void,
+                length as u32,
+                &mut return_length,
+            )
+        };
+        assert_eq!(status, STATUS_INFO_LENGTH_MISMATCH);
+        assert_eq!(return_length as usize, entry_size * real);
     }
 
     #[test]

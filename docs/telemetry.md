@@ -98,6 +98,16 @@ interval that was spent doing something other than running the idle thread.
 `IdleTime`, `KernelTime`, `UserTime`, `DpcTime` and `InterruptTime` in 100 ns
 units.
 
+Windows accepts only a buffer that holds a whole number of these 48-byte
+entries, and fills as many as fit; any other length is refused with
+`STATUS_INFO_LENGTH_MISMATCH` however large it is (on Windows 11 with 24
+processors: 1200 and 1248 bytes succeed, 2048 and 4096 fail). The buffer is
+therefore sized in whole entries, with room for 64, a processor group's most.
+An earlier version started at 1024 bytes and doubled, which is never a multiple
+of 48, so on every machine with fewer than 22 logical processors the query
+failed on every sample and CPU showed as unavailable - first reported from a
+ThinkPad T440s with four.
+
 On machines with more than one processor group, class 8 alone reports only the
 calling thread's group. We detect the group count from
 `GetLogicalProcessorInformationEx` and, when there is more than one, query each
