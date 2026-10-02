@@ -1,0 +1,199 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1376 1143" width="1376" height="1143" role="img" aria-labelledby="logo-title">
+  <title id="logo-title">Task Manager</title>
+  <defs>
+    <!-- Pins run from a bright tip into the shadow the chip casts on them. -->
+    <linearGradient id="logo-pin-top" gradientUnits="userSpaceOnUse" x1="0" y1="55" x2="0" y2="197">
+      <stop offset="0" stop-color="#2ff0fd"/>
+      <stop offset=".38" stop-color="#1cadfb"/>
+      <stop offset=".92" stop-color="#196bfc"/>
+      <stop offset="1" stop-color="#06164d"/>
+    </linearGradient>
+    <linearGradient id="logo-pin-bottom" gradientUnits="userSpaceOnUse" x1="0" y1="1108" x2="0" y2="976">
+      <stop offset="0" stop-color="#fc66c8"/>
+      <stop offset=".5" stop-color="#fc3aa4"/>
+      <stop offset=".92" stop-color="#fa1773"/>
+      <stop offset="1" stop-color="#5a0428"/>
+    </linearGradient>
+    <linearGradient id="logo-pin-left-blue" gradientUnits="userSpaceOnUse" x1="80" y1="0" x2="230" y2="0">
+      <stop offset="0" stop-color="#2ae6fd"/>
+      <stop offset=".3" stop-color="#1cbdfc"/>
+      <stop offset=".92" stop-color="#1b66fc"/>
+      <stop offset="1" stop-color="#06164d"/>
+    </linearGradient>
+    <linearGradient id="logo-pin-left-purple" gradientUnits="userSpaceOnUse" x1="80" y1="0" x2="230" y2="0">
+      <stop offset="0" stop-color="#d272fb"/>
+      <stop offset=".3" stop-color="#b95afa"/>
+      <stop offset=".92" stop-color="#782efd"/>
+      <stop offset="1" stop-color="#1c0845"/>
+    </linearGradient>
+    <linearGradient id="logo-pin-left-pink" gradientUnits="userSpaceOnUse" x1="80" y1="0" x2="230" y2="0">
+      <stop offset="0" stop-color="#fc74dc"/>
+      <stop offset=".3" stop-color="#fb5dcb"/>
+      <stop offset=".92" stop-color="#fc209a"/>
+      <stop offset="1" stop-color="#500023"/>
+    </linearGradient>
+    <linearGradient id="logo-pin-right-blue" gradientUnits="userSpaceOnUse" x1="1295" y1="0" x2="1140" y2="0">
+      <stop offset="0" stop-color="#1fc4fc"/>
+      <stop offset=".3" stop-color="#159ffc"/>
+      <stop offset=".92" stop-color="#135cfc"/>
+      <stop offset="1" stop-color="#04154d"/>
+    </linearGradient>
+    <linearGradient id="logo-pin-right-purple" gradientUnits="userSpaceOnUse" x1="1295" y1="0" x2="1140" y2="0">
+      <stop offset="0" stop-color="#c45afa"/>
+      <stop offset=".3" stop-color="#ac4afb"/>
+      <stop offset=".92" stop-color="#7626fb"/>
+      <stop offset="1" stop-color="#1c0845"/>
+    </linearGradient>
+    <linearGradient id="logo-pin-right-pink" gradientUnits="userSpaceOnUse" x1="1295" y1="0" x2="1140" y2="0">
+      <stop offset="0" stop-color="#fc60c4"/>
+      <stop offset=".3" stop-color="#fc4cb5"/>
+      <stop offset=".92" stop-color="#fc1280"/>
+      <stop offset="1" stop-color="#500023"/>
+    </linearGradient>
+
+    <!-- The halo behind the chip body: blue at the top, pink at the bottom. -->
+    <linearGradient id="logo-body-halo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3fa0ff"/>
+      <stop offset=".45" stop-color="#5a6cf5"/>
+      <stop offset=".7" stop-color="#b04ae8"/>
+      <stop offset="1" stop-color="#ff3a9a"/>
+    </linearGradient>
+    <linearGradient id="logo-body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5a7cc0"/>
+      <stop offset=".28" stop-color="#46639d"/>
+      <stop offset=".5" stop-color="#3b4f7c"/>
+      <stop offset=".72" stop-color="#323d5b"/>
+      <stop offset="1" stop-color="#2b3350"/>
+    </linearGradient>
+    <linearGradient id="logo-body-rim" x1="0" y1="0" x2=".45" y2="1">
+      <stop offset="0" stop-color="#f0fbff"/>
+      <stop offset=".19" stop-color="#6fdcff"/>
+      <stop offset=".4" stop-color="#7fb0ff"/>
+      <stop offset=".6" stop-color="#7a6cff"/>
+      <stop offset=".79" stop-color="#d548f9"/>
+      <stop offset="1" stop-color="#ff3d9a"/>
+    </linearGradient>
+    <linearGradient id="logo-screen-lip" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f70ad"/>
+      <stop offset=".5" stop-color="#5a7cc4"/>
+      <stop offset="1" stop-color="#8fbcff"/>
+    </linearGradient>
+    <linearGradient id="logo-screen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22314d"/>
+      <stop offset=".5" stop-color="#131b2b"/>
+      <stop offset="1" stop-color="#090c13"/>
+    </linearGradient>
+
+    <linearGradient id="logo-bar-blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#25ecfc"/>
+      <stop offset=".45" stop-color="#1aaefb"/>
+      <stop offset="1" stop-color="#1890fb"/>
+    </linearGradient>
+    <linearGradient id="logo-bar-purple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c65dfb"/>
+      <stop offset=".45" stop-color="#9d47fb"/>
+      <stop offset="1" stop-color="#8c42fb"/>
+    </linearGradient>
+    <linearGradient id="logo-bar-pink" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fc66c8"/>
+      <stop offset=".45" stop-color="#fc51b0"/>
+      <stop offset="1" stop-color="#fb48a2"/>
+    </linearGradient>
+
+    <clipPath id="logo-screen-clip">
+      <rect x="313" y="273" width="734" height="626" rx="95"/>
+    </clipPath>
+
+    <filter id="logo-blur" filterUnits="userSpaceOnUse" x="0" y="0" width="1376" height="1143">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <!-- A tight halo plus a fainter wide one, with the artwork drawn over both. -->
+    <filter id="logo-pin-glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1376" height="1143">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="16" result="wide"/>
+      <feComponentTransfer in="wide" result="wide-faint">
+        <feFuncA type="linear" slope=".6"/>
+      </feComponentTransfer>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="tight"/>
+      <feMerge>
+        <feMergeNode in="wide-faint"/>
+        <feMergeNode in="tight"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="logo-bar-glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1376" height="1143">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="20" result="wide"/>
+      <feComponentTransfer in="wide" result="wide-faint">
+        <feFuncA type="linear" slope=".85"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="wide-faint"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="228" y="195" width="914" height="783" rx="160" fill="url(#logo-body-halo)" opacity=".85" filter="url(#logo-blur)"/>
+
+  <!-- Pins. Each one runs under the chip body, which hides its inner end. -->
+  <g filter="url(#logo-pin-glow)">
+    <g fill="url(#logo-pin-top)">
+      <rect x="429" y="55" width="99" height="165" rx="38"/>
+      <rect x="639" y="55" width="98" height="165" rx="38"/>
+      <rect x="849" y="55" width="100" height="165" rx="38"/>
+    </g>
+    <g fill="url(#logo-pin-bottom)">
+      <rect x="429" y="953" width="98" height="155" rx="38"/>
+      <rect x="639" y="953" width="97" height="155" rx="38"/>
+      <rect x="849" y="953" width="100" height="155" rx="38"/>
+    </g>
+    <rect x="80" y="361" width="170" height="96" rx="38" fill="url(#logo-pin-left-blue)"/>
+    <rect x="80" y="532" width="170" height="95" rx="38" fill="url(#logo-pin-left-purple)"/>
+    <rect x="80" y="703" width="170" height="95" rx="38" fill="url(#logo-pin-left-pink)"/>
+    <rect x="1125" y="360" width="170" height="96" rx="38" fill="url(#logo-pin-right-blue)"/>
+    <rect x="1125" y="531" width="170" height="95" rx="38" fill="url(#logo-pin-right-purple)"/>
+    <rect x="1125" y="703" width="170" height="95" rx="38" fill="url(#logo-pin-right-pink)"/>
+
+    <g fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="3">
+      <rect x="435" y="61" width="87" height="159" rx="32"/>
+      <rect x="645" y="61" width="86" height="159" rx="32"/>
+      <rect x="855" y="61" width="88" height="159" rx="32"/>
+      <rect x="435" y="953" width="86" height="149" rx="32"/>
+      <rect x="645" y="953" width="85" height="149" rx="32"/>
+      <rect x="855" y="953" width="88" height="149" rx="32"/>
+      <rect x="86" y="367" width="164" height="84" rx="32"/>
+      <rect x="86" y="538" width="164" height="83" rx="32"/>
+      <rect x="86" y="709" width="164" height="83" rx="32"/>
+      <rect x="1125" y="366" width="164" height="84" rx="32"/>
+      <rect x="1125" y="537" width="164" height="83" rx="32"/>
+      <rect x="1125" y="709" width="164" height="83" rx="32"/>
+    </g>
+  </g>
+
+  <!-- Chip body -->
+  <rect x="228" y="195" width="914" height="783" rx="160" fill="url(#logo-body)"/>
+  <rect x="231" y="198" width="908" height="777" rx="157" fill="none" stroke="url(#logo-body-rim)" stroke-width="6"/>
+
+  <!-- Screen, with the shadow the body's lip throws into it -->
+  <rect x="313" y="273" width="734" height="626" rx="95" fill="url(#logo-screen)"/>
+  <g clip-path="url(#logo-screen-clip)">
+    <rect x="313" y="273" width="734" height="626" rx="95" fill="none" stroke="#02040a" stroke-width="30" filter="url(#logo-blur)"/>
+  </g>
+  <rect x="310.5" y="270.5" width="739" height="631" rx="97.5" fill="none" stroke="url(#logo-screen-lip)" stroke-width="5"/>
+
+  <!-- CPU, memory and GPU bars: an empty track, then the lit part over it -->
+  <g fill="#8fb0ff" fill-opacity=".2" stroke="#9cc0ff" stroke-opacity=".45" stroke-width="2.5">
+    <rect x="384" y="368" width="602" height="114" rx="57"/>
+    <rect x="384" y="541" width="602" height="114" rx="57"/>
+    <rect x="384" y="712" width="602" height="114" rx="57"/>
+  </g>
+  <g filter="url(#logo-bar-glow)">
+    <rect x="384" y="368" width="392" height="114" rx="57" fill="url(#logo-bar-blue)"/>
+    <rect x="384" y="541" width="331" height="114" rx="57" fill="url(#logo-bar-purple)"/>
+    <rect x="384" y="712" width="378" height="114" rx="57" fill="url(#logo-bar-pink)"/>
+  </g>
+  <g fill="none" stroke-opacity=".9" stroke-width="3">
+    <rect x="385.5" y="369.5" width="389" height="111" rx="55.5" stroke="#8dffff"/>
+    <rect x="385.5" y="542.5" width="328" height="111" rx="55.5" stroke="#f6b4ff"/>
+    <rect x="385.5" y="713.5" width="375" height="111" rx="55.5" stroke="#ff8fe0"/>
+  </g>
+</svg>
