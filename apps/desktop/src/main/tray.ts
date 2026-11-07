@@ -59,6 +59,21 @@ import type { WidgetController } from './widget-controller.js';
  */
 const REDRAWS_PER_COLLECTION = 100;
 
+/**
+ * How long the icon and tooltip hold still after the pointer last moved over
+ * the icon.
+ *
+ * Windows 11 moves a tray icon between the taskbar and the hidden-icons box
+ * when it is dragged. Dragging this one stopped working when the icon began
+ * redrawing itself with live readings, up to twice a second; it had worked
+ * while only the tooltip changed. Windows documents nothing either way, so
+ * this does the safe thing: while the pointer is on the icon, and for a few
+ * seconds after, nothing about the icon changes, then it catches up. Electron
+ * reports the pointer moving over a tray icon from the shell's own mouse
+ * messages (`notify_icon_host.cc`), the same ones that deliver its clicks.
+ */
+const HOLD_AFTER_POINTER_MS = 4_000;
+
 export class AppTray {
   #tray: Tray | null = null;
   #widget: WidgetController;
@@ -85,6 +100,9 @@ export class AppTray {
   #collect: (() => void) | null;
   /** Set once the live icon has failed, so it is not retried twice a second. */
   #liveFailed = false;
+  /** Until when the icon holds still for a pointer on it; see HOLD_AFTER_POINTER_MS. */
+  #holdUntil = 0;
+  #holdTimer: NodeJS.Timeout | null = null;
   #onDisplayMetricsChanged = (): void => this.#resize();
 
   constructor(options: {
@@ -127,6 +145,7 @@ export class AppTray {
     this.#tray.setToolTip('Task Manager');
     this.#tray.on('double-click', () => this.#onShowMainWindow());
     this.#tray.on('click', () => this.#onShowMainWindow());
+    this.#tray.on('mouse-move', () => this.#hold());
     // Scaling can change while the application runs. The icon is drawn at an
     // exact pixel size, so it has to follow, or Windows stretches it.
     screen.on('display-metrics-changed', this.#onDisplayMetricsChanged);
@@ -151,7 +170,24 @@ export class AppTray {
     if (!this.#tray) return;
     const readings = readTrayReadings(snapshot);
     this.#latest = readings;
+    // Held for a pointer on the icon; the end of the hold shows the latest.
+    if (Date.now() < this.#holdUntil) return;
+    this.#show(readings);
+  }
 
+  /** Keep the icon still while the pointer is on it, then catch up. */
+  #hold(): void {
+    this.#holdUntil = Date.now() + HOLD_AFTER_POINTER_MS;
+    if (this.#holdTimer) clearTimeout(this.#holdTimer);
+    this.#holdTimer = setTimeout(() => {
+      this.#holdTimer = null;
+      if (this.#latest) this.#show(this.#latest);
+    }, HOLD_AFTER_POINTER_MS);
+    this.#holdTimer.unref?.();
+  }
+
+  #show(readings: TrayReadings): void {
+    if (!this.#tray) return;
     const tooltip = trayTooltip(readings);
     if (!this.#paused && tooltip !== this.#lastTooltip) {
       this.#lastTooltip = tooltip;
@@ -162,6 +198,8 @@ export class AppTray {
   }
 
   destroy(): void {
+    if (this.#holdTimer) clearTimeout(this.#holdTimer);
+    this.#holdTimer = null;
     screen.removeListener('display-metrics-changed', this.#onDisplayMetricsChanged);
     this.#tray?.destroy();
     this.#tray = null;
